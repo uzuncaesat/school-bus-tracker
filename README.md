@@ -1,4 +1,4 @@
-# 🚌 Okyanus Servis — Okul Servisi Yönetim & Canlı Takip Sistemi
+# 🚌 School Bus Tracker — Okul Servisi Yönetim & Canlı Takip Sistemi
 
 Okul servis taşımacılığı yapan bir işletme için **uçtan uca** geliştirilmiş; veli kaydı, sözleşme/belge saklama, ödeme takibi, güzergah yönetimi ve **GPS ile canlı araç takibi + yaklaşım bildirimi** sağlayan tam kapsamlı bir web uygulaması.
 
