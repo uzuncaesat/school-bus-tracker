@@ -1,0 +1,70 @@
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@if (araniyor)
+{
+    <small style="color:var(--ink-3); display:block; margin-bottom:4px;">Adres aranıyor…</small>
+}
+@if (bulunamadi)
+{
+    <small style="color:var(--bad); display:block; margin-bottom:4px;">Adres tam bulunamadı — haritaya tıklayıp elle işaretleyebilirsiniz.</small>
+}
+<div id="@elementId" style="height:300px; border-radius:8px; border:1px solid #dee2e6;"></div>
+@if (Latitude.HasValue && Longitude.HasValue)
+{
+    <small style="color:var(--good)">📍 Konum işaretlendi: @Latitude.Value.ToString("F5"), @Longitude.Value.ToString("F5")</small>
+}
+else
+{
+    <small style="color:var(--ink-3)">Adresi yazıp "Adresi Haritada Bul"a bas, ya da haritaya tıkla.</small>
+}
+
+@code {
+    // İki yönlü bağlama: @bind-Latitude / @bind-Longitude
+    [Parameter] public double? Latitude { get; set; }
+    [Parameter] public EventCallback<double?> LatitudeChanged { get; set; }
+    [Parameter] public double? Longitude { get; set; }
+    [Parameter] public EventCallback<double?> LongitudeChanged { get; set; }
+
+    private readonly string elementId = "map-" + Guid.NewGuid().ToString("N");
+    private DotNetObjectReference<MapPicker>? selfRef;
+    private bool araniyor;
+    private bool bulunamadi;
+
+    // Form'dan çağrılır: verilen adresi haritada bulup işaretler
+    public async Task<bool> SearchFor(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query) || selfRef is null) return false;
+        araniyor = true; bulunamadi = false; StateHasChanged();
+        var ok = await JS.InvokeAsync<bool>("okMap.searchAddress", elementId, query, selfRef);
+        araniyor = false; bulunamadi = !ok; StateHasChanged();
+        return ok;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            selfRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("okMap.initPicker", elementId, selfRef, Latitude, Longitude);
+        }
+    }
+
+    // JavaScript (harita tıklaması veya adres arama) buradan çağırır
+    [JSInvokable]
+    public async Task OnPointPicked(double lat, double lng)
+    {
+        Latitude = lat;
+        Longitude = lng;
+        await LatitudeChanged.InvokeAsync(lat);
+        await LongitudeChanged.InvokeAsync(lng);
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("okMap.dispose", elementId); } catch { }
+        selfRef?.Dispose();
+    }
+}

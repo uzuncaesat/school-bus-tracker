@@ -1,0 +1,196 @@
+@page "/kayitlar"
+@attribute [Authorize]
+@using OkyanusServis.Web.Models
+@using OkyanusServis.Web.Services
+@inject ApiClient Api
+@inject IJSRuntime JS
+
+<PageTitle>Panel</PageTitle>
+
+<div class="page-head">
+    <h2>Kayıt Paneli</h2>
+    <p>Tüm veli kayıtları. Ara, filtrele, detaya gir.</p>
+</div>
+
+@if (hata is not null)
+{
+    <div class="tcard" style="color:var(--bad)">@hata</div>
+}
+else if (kayitlar is null)
+{
+    <p style="color:var(--ink-3)"><em>Yükleniyor…</em></p>
+}
+else
+{
+    <div class="stats">
+        <div class="stat"><div class="k"><span class="dot" style="background:var(--accent)"></span>Toplam Kayıt</div><div class="v tnum">@kayitlar.Count</div></div>
+        <div class="stat"><div class="k"><span class="dot" style="background:var(--amber)"></span>Gidiş-Dönüş</div><div class="v tnum">@kayitlar.Count(k => k.ServiceType == "Gidiş-Dönüş")</div></div>
+        <div class="stat"><div class="k"><span class="dot" style="background:var(--violet)"></span>Sabah / Akşam</div><div class="v tnum">@kayitlar.Count(k => k.ServiceType != "Gidiş-Dönüş")</div></div>
+        <div class="stat"><div class="k"><span class="dot" style="background:var(--wait)"></span>Ödeme Bekleyen</div><div class="v tnum">@kayitlar.Count(k => k.PaymentStatus != "Ödendi")</div></div>
+    </div>
+
+    <div class="toolbar">
+        <div class="search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="search" placeholder="İsim, telefon, sınıf veya mahalle ara…" @bind="arama" @bind:event="oninput" />
+        </div>
+        <div class="chips">
+            <button class="chip @(servFilter == "all" ? "on" : "")" @onclick='() => servFilter = "all"'>Tümü</button>
+            <button class="chip @(servFilter == "Gidiş-Dönüş" ? "on" : "")" @onclick='() => servFilter = "Gidiş-Dönüş"'>Gidiş-Dönüş</button>
+            <button class="chip @(servFilter == "Sabah" ? "on" : "")" @onclick='() => servFilter = "Sabah"'>Sabah</button>
+            <button class="chip @(servFilter == "Akşam" ? "on" : "")" @onclick='() => servFilter = "Akşam"'>Akşam</button>
+            <button class="chip @(sadeceBekleyen ? "on" : "")" @onclick="() => sadeceBekleyen = !sadeceBekleyen">Ödeme Bekleyen</button>
+            <button class="chip @(sadeceEksik ? "on" : "")" @onclick="() => sadeceEksik = !sadeceEksik">Eksik Ödeme</button>
+        </div>
+        <button class="tbtn ghost" @onclick="ExcelAktar">📊 Excel'e Aktar</button>
+    </div>
+
+    <div class="count-line">@Filtreli.Count() kayıt gösteriliyor@(EklFiltre ? " (filtreli)" : "")</div>
+
+    @if (!Filtreli.Any())
+    {
+        <div class="empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            <div>Eşleşen kayıt bulunamadı.</div>
+        </div>
+    }
+    else
+    {
+        <div class="list">
+            @foreach (var grup in Gruplu)
+            {
+                <div style="margin:16px 0 8px; padding-bottom:4px; border-bottom:1px solid var(--line); font-weight:700; font-size:13px; color:var(--ink-2); display:flex; justify-content:space-between; align-items:center;">
+                    <span>📅 @GunBaslik(grup.Key)</span>
+                    <span style="color:var(--ink-3); font-weight:600;">@grup.Count() kayıt</span>
+                </div>
+                @foreach (var k in grup)
+                {
+                <div class="rec">
+                    <a class="rec-head" href="kayit/@k.Id" style="text-decoration:none">
+                        <div class="avatar">@Initials(k.StudentName)</div>
+                        <div class="rec-main">
+                            <div class="name">@k.StudentName</div>
+                            <div class="sub"><span>@k.Grade · @k.School</span><span>@k.Area</span></div>
+                        </div>
+                        <div class="rec-right">
+                            <span class="badge b-serv">@k.ServiceType</span>
+                            @if (KardesVar(k))
+                            {
+                                <span class="badge b-veh" title="Kardeşi var">👨‍👩‍👧 Kardeş</span>
+                            }
+                            @if (!string.IsNullOrEmpty(k.VehiclePlate))
+                            {
+                                <span class="badge b-veh">🚌 @k.VehiclePlate</span>
+                            }
+                            @if (k.SiblingOfId is not null)
+                            {
+                                <span class="badge b-veh" title="Ödeme ailenin ana kaydında">💳 Ödeme ailede</span>
+                            }
+                            else
+                            {
+                                <span class="badge @OdemeClass(k.PaymentStatus)">@k.PaymentStatus</span>
+                                @if (Kalan(k) > 0)
+                                {
+                                    <span class="badge b-none">Kalan @Kalan(k).ToString("N0")₺</span>
+                                }
+                            }
+                            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+                        </div>
+                    </a>
+                </div>
+                }
+            }
+        </div>
+    }
+}
+
+@code {
+    private List<RegistrationDto>? kayitlar;
+    private string arama = "";
+    private string servFilter = "all";
+    private bool sadeceBekleyen = false;
+    private bool sadeceEksik = false;
+    private string? hata;
+
+    // Kardeş (ana kayıt değil) ise ödeme ailede tutulur → burada borç sayılmaz
+    private static decimal Kalan(RegistrationDto k) => k.SiblingOfId is not null ? 0 : (k.Fee ?? 0) - (k.PaidAmount ?? 0);
+
+    // Bu kaydın bir kardeşi var mı? (aynı aile: birine bağlı ya da ortak birincil)
+    private bool KardesVar(RegistrationDto k)
+    {
+        var primary = k.SiblingOfId ?? k.Id;
+        return kayitlar?.Any(o => o.Id != k.Id &&
+            ((o.SiblingOfId ?? o.Id) == primary)) ?? false;
+    }
+
+    // Kayıtları girildiği güne göre grupla (en yeni gün üstte)
+    private IEnumerable<IGrouping<DateTime, RegistrationDto>> Gruplu =>
+        Filtreli.GroupBy(k => k.CreatedAt.ToLocalTime().Date).OrderByDescending(g => g.Key);
+
+    private static readonly string[] Aylar =
+        { "Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık" };
+    private static readonly string[] Gunler =
+        { "Pazar","Pazartesi","Salı","Çarşamba","Perşembe","Cuma","Cumartesi" };
+
+    private static string GunBaslik(DateTime d)
+        => $"{d.Day} {Aylar[d.Month - 1]} {d.Year} ({Gunler[(int)d.DayOfWeek]})";
+
+    private bool EklFiltre => servFilter != "all" || sadeceBekleyen || sadeceEksik || !string.IsNullOrWhiteSpace(arama);
+
+    private IEnumerable<RegistrationDto> Filtreli => (kayitlar ?? new()).Where(k =>
+    {
+        if (servFilter != "all" && k.ServiceType != servFilter) return false;
+        // Kardeş kayıtları ödeme filtrelerinde sayılmaz (ödeme ailede)
+        if (sadeceBekleyen && (k.SiblingOfId is not null || k.PaymentStatus == "Ödendi")) return false;
+        if (sadeceEksik && Kalan(k) <= 0) return false;
+        if (!string.IsNullOrWhiteSpace(arama))
+        {
+            var q = arama.Trim().ToLower();
+            var hay = $"{k.StudentName} {k.ParentName} {k.Phone1} {k.Grade} {k.Area} {k.School}".ToLower();
+            if (!hay.Contains(q)) return false;
+        }
+        return true;
+    });
+
+    private static string Initials(string name)
+    {
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return string.Concat(parts.Take(2).Select(p => char.ToUpper(p[0])));
+    }
+
+    private static string OdemeClass(string s) => s switch
+    {
+        "Ödendi" => "b-paid",
+        "Beklemede" => "b-wait",
+        _ => "b-none"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { kayitlar = await Api.GetRegistrationsAsync(); }
+        catch (Exception ex) { hata = "Kayıtlar yüklenemedi: " + ex.Message; }
+    }
+
+    private async Task ExcelAktar()
+    {
+        if (kayitlar is null || kayitlar.Count == 0) return;
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("Öğrenci;Sınıf;Okul;Veli;Telefon;Mahalle;Servis;Araç;Ödeme;Ücret;Ödenen;Kalan;Yöntem");
+        foreach (var k in kayitlar)
+            sb.AppendLine(string.Join(";", new[]
+            {
+                k.StudentName, k.Grade, k.School, k.ParentName, k.Phone1,
+                k.Area ?? "", k.ServiceType, k.VehiclePlate ?? "", k.PaymentStatus,
+                (k.Fee ?? 0).ToString("N0"), (k.PaidAmount ?? 0).ToString("N0"),
+                Kalan(k).ToString("N0"), k.PaymentMethod ?? ""
+            }.Select(Csv)));
+
+        // UTF-8 BOM ekle ki Excel Türkçe karakterleri doğru göstersin
+        var bytes = new byte[] { 0xEF, 0xBB, 0xBF }
+            .Concat(System.Text.Encoding.UTF8.GetBytes(sb.ToString())).ToArray();
+        await JS.InvokeVoidAsync("okFiles.download", "okyanus-kayitlar.csv",
+            Convert.ToBase64String(bytes), "text/csv");
+    }
+
+    private static string Csv(string s) => "\"" + (s ?? "").Replace("\"", "\"\"") + "\"";
+}

@@ -1,0 +1,197 @@
+@page "/kayit-ekle"
+@using OkyanusServis.Web.Models
+@using OkyanusServis.Web.Services
+@inject ApiClient Api
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Yeni Kayıt</PageTitle>
+
+<div class="form-card">
+    <div class="form-hero">
+        <h2>Servis Kayıt Formu</h2>
+        <p>Çocuğunuzun servis kaydı için bilgileri doldurun.</p>
+    </div>
+
+    <EditForm class="tform" Model="model" OnValidSubmit="Kaydet">
+        <DataAnnotationsValidator />
+
+        @if (hata is not null)
+        {
+            <div style="background:var(--bad-soft); color:var(--bad); padding:10px 12px; border-radius:10px; font-size:13px; font-weight:600;">@hata</div>
+        }
+
+        <div class="fieldset">
+            <div class="fs-title">Öğrenci Bilgileri</div>
+            <label class="f">Öğrenci Adı Soyadı <span class="req">*</span>
+                <InputText @bind-Value="model.StudentName" placeholder="Örn. Zeynep Kaya" />
+            </label>
+            <label class="f">Öğrenci TC Kimlik No
+                <InputText @bind-Value="model.StudentTc" placeholder="11 haneli" />
+            </label>
+            <div class="trow">
+                <label class="f">Sınıf / Şube <span class="req">*</span>
+                    <InputText @bind-Value="model.Grade" placeholder="Örn. 4-B" />
+                </label>
+                <div class="f">
+                    <span>Servis Tipi <span class="req">*</span></span>
+                    <div class="seg">
+                        <InputRadioGroup @bind-Value="model.ServiceType">
+                            <label><InputRadio Value="@("Gidiş-Dönüş")" />Gidiş-Dönüş</label>
+                            <label><InputRadio Value="@("Sabah")" />Sabah</label>
+                            <label><InputRadio Value="@("Akşam")" />Akşam</label>
+                        </InputRadioGroup>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="fieldset">
+            <div class="fs-title">Veli & İletişim</div>
+            <label class="f">Veli Adı Soyadı <span class="req">*</span>
+                <InputText @bind-Value="model.ParentName" placeholder="Örn. Murat Kaya" />
+            </label>
+            <label class="f">Veli TC Kimlik No
+                <InputText @bind-Value="model.ParentTc" placeholder="11 haneli" />
+            </label>
+            <div class="trow">
+                <label class="f">Telefon (1) <span class="req">*</span>
+                    <InputText @bind-Value="model.Phone1" placeholder="05__ ___ __ __" />
+                </label>
+                <label class="f">Telefon (2) — Acil
+                    <InputText @bind-Value="model.Phone2" placeholder="İkinci veli / acil" />
+                </label>
+            </div>
+        </div>
+
+        <div class="fieldset">
+            <div class="fs-title">Adres & Konum</div>
+            <label class="f">Ev Adresi <span class="req">*</span>
+                <InputTextArea @bind-Value="model.Address" placeholder="Mahalle, sokak, no, ilçe" />
+            </label>
+            <label class="f">İlçe / Mahalle
+                <InputText @bind-Value="model.Area" placeholder="Örn. Ataşehir / Barbaros" />
+            </label>
+            <button type="button" class="tbtn" style="align-self:flex-start" @onclick="AdresiHaritadaBul">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.5-7-11a7 7 0 0 1 14 0c0 4.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                Adresi Haritada Bul
+            </button>
+            <div class="f">
+                <span>Konum</span>
+                <MapPicker @ref="mapPicker" @bind-Latitude="model.Latitude" @bind-Longitude="model.Longitude" />
+            </div>
+            <label class="f">Sağlık Notu (opsiyonel)
+                <InputText @bind-Value="model.HealthNote" placeholder="Alerji, ilaç vb." />
+            </label>
+        </div>
+
+        <div class="fieldset">
+            <div class="fs-title">Ödeme (opsiyonel)</div>
+            <div class="trow">
+                <label class="f">Toplam Ücret (₺)<InputNumber @bind-Value="model.Fee" /></label>
+                <label class="f">Durum
+                    <InputSelect @bind-Value="model.PaymentStatus">
+                        <option value="Beklemede">Beklemede</option>
+                        <option value="Kısmi">Kısmi</option>
+                        <option value="Ödendi">Ödendi</option>
+                    </InputSelect>
+                </label>
+            </div>
+
+            <div class="fs-title" style="margin-top:14px; font-size:13px;">Peşin / Tek Çekim</div>
+            <div class="trow">
+                <label class="f">Peşin Tutar (₺)<InputNumber @bind-Value="model.DownPayment" /></label>
+                <label class="f">Yöntem
+                    <InputSelect @bind-Value="model.DownPaymentMethod">
+                        <option value="">—</option>
+                        @foreach (var m in PaymentOptions.DownMethods)
+                        {
+                            <option value="@m">@m</option>
+                        }
+                    </InputSelect>
+                </label>
+                <label class="f">Peşin Bankası (kart/havale ise)
+                    <InputSelect @bind-Value="model.DownPaymentBank">
+                        <option value="">—</option>
+                        @foreach (var b in PaymentOptions.Banks)
+                        {
+                            <option value="@b">@b</option>
+                        }
+                    </InputSelect>
+                </label>
+            </div>
+
+            <div class="fs-title" style="margin-top:14px; font-size:13px;">Taksitli</div>
+            <div class="trow">
+                <label class="f">Taksitli Tutar (₺)<InputNumber @bind-Value="model.InstallmentAmount" /></label>
+                <label class="f">Taksit Sayısı<InputNumber @bind-Value="model.Installments" /></label>
+                <label class="f">Taksit Bankası
+                    <InputSelect @bind-Value="model.InstallmentBank">
+                        <option value="">—</option>
+                        @foreach (var b in PaymentOptions.Banks)
+                        {
+                            <option value="@b">@b</option>
+                        }
+                    </InputSelect>
+                </label>
+            </div>
+            <div class="hint">Not: Peşin + Taksitli tutar toplamı "alınan/planlanan" olarak kaydedilir. Sadece peşinse taksit kısmını boş bırak.</div>
+        </div>
+
+        <label class="consent">
+            <InputCheckbox @bind-Value="model.KvkkAccepted" />
+            <span>Servis sözleşmesini ve KVKK Aydınlatma Metni'ni okudum, onaylıyorum.</span>
+        </label>
+
+        <button type="submit" class="submit" disabled="@kaydediliyor">
+            @(kaydediliyor ? "Kaydediliyor…" : "Kaydı Tamamla")
+        </button>
+        <div class="hint">Bilgileriniz yalnızca servis planlaması için kullanılır.</div>
+    </EditForm>
+</div>
+
+@code {
+    private RegistrationCreateDto model = new();
+    private MapPicker? mapPicker;
+    private bool kaydediliyor;
+    private string? hata;
+
+    private async Task AdresiHaritadaBul()
+    {
+        var q = $"{model.Address} {model.Area}".Trim();
+        if (mapPicker is not null && !string.IsNullOrWhiteSpace(q))
+            await mapPicker.SearchFor(q);
+    }
+
+    private async Task Kaydet()
+    {
+        kaydediliyor = true;
+        hata = null;
+        try
+        {
+            // Mükerrer kontrolü (personel girişliyse): aynı ad + sınıf varsa uyar
+            try
+            {
+                var mevcut = await Api.GetRegistrationsAsync();
+                bool ayni = mevcut.Any(r =>
+                    string.Equals(r.StudentName.Trim(), model.StudentName.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(r.Grade.Trim(), model.Grade.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (ayni)
+                {
+                    var devam = await JS.InvokeAsync<bool>("confirm",
+                        $"'{model.StudentName}' ({model.Grade}) için zaten bir kayıt var. Yine de eklensin mi?");
+                    if (!devam) { kaydediliyor = false; return; }
+                }
+            }
+            catch { /* yetki yoksa kontrolü atla */ }
+
+            await Api.CreateRegistrationAsync(model);
+            Nav.NavigateTo("kayitlar");
+        }
+        catch (Exception ex)
+        {
+            hata = "Kayıt gönderilemedi: " + ex.Message;
+            kaydediliyor = false;
+        }
+    }
+}

@@ -1,0 +1,154 @@
+@page "/kayit/{Id:int}/duzenle"
+@attribute [Authorize(Roles = "Admin,Driver")]
+@using OkyanusServis.Web.Models
+@using OkyanusServis.Web.Services
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>Kayıt Düzenle</PageTitle>
+
+@if (hata is not null)
+{
+    <div class="tcard" style="color:var(--bad)">@hata</div>
+}
+else if (model is null)
+{
+    <p style="color:var(--ink-3)"><em>Yükleniyor…</em></p>
+}
+else
+{
+    <div class="form-card">
+        <div class="form-hero">
+            <h2>Kaydı Düzenle</h2>
+            <p>@model.StudentName — bilgileri güncelle.</p>
+        </div>
+
+        <EditForm class="tform" Model="model" OnValidSubmit="Kaydet">
+            <DataAnnotationsValidator />
+
+            <div class="fieldset">
+                <div class="fs-title">Öğrenci Bilgileri</div>
+                <label class="f">Öğrenci Adı Soyadı <span class="req">*</span>
+                    <InputText @bind-Value="model.StudentName" />
+                </label>
+                <label class="f">Öğrenci TC Kimlik No
+                    <InputText @bind-Value="model.StudentTc" placeholder="11 haneli" />
+                </label>
+                <div class="trow">
+                    <label class="f">Sınıf / Şube <span class="req">*</span>
+                        <InputText @bind-Value="model.Grade" />
+                    </label>
+                    <div class="f">
+                        <span>Servis Tipi <span class="req">*</span></span>
+                        <div class="seg">
+                            <InputRadioGroup @bind-Value="model.ServiceType">
+                                <label><InputRadio Value="@("Gidiş-Dönüş")" />Gidiş-Dönüş</label>
+                                <label><InputRadio Value="@("Sabah")" />Sabah</label>
+                                <label><InputRadio Value="@("Akşam")" />Akşam</label>
+                            </InputRadioGroup>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="fieldset">
+                <div class="fs-title">Veli & İletişim</div>
+                <label class="f">Veli Adı Soyadı <span class="req">*</span>
+                    <InputText @bind-Value="model.ParentName" />
+                </label>
+                <label class="f">Veli TC Kimlik No
+                    <InputText @bind-Value="model.ParentTc" placeholder="11 haneli" />
+                </label>
+                <div class="trow">
+                    <label class="f">Telefon (1) <span class="req">*</span>
+                        <InputText @bind-Value="model.Phone1" />
+                    </label>
+                    <label class="f">Telefon (2) — Acil
+                        <InputText @bind-Value="model.Phone2" />
+                    </label>
+                </div>
+            </div>
+
+            <div class="fieldset">
+                <div class="fs-title">Adres & Konum</div>
+                <label class="f">Ev Adresi <span class="req">*</span>
+                    <InputTextArea @bind-Value="model.Address" />
+                </label>
+                <label class="f">İlçe / Mahalle
+                    <InputText @bind-Value="model.Area" />
+                </label>
+                <button type="button" class="tbtn" style="align-self:flex-start" @onclick="AdresiHaritadaBul">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.5-7-11a7 7 0 0 1 14 0c0 4.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                    Adresi Haritada Bul
+                </button>
+                <div class="f">
+                    <span>Konum</span>
+                    <MapPicker @ref="mapPicker" @bind-Latitude="model.Latitude" @bind-Longitude="model.Longitude" />
+                </div>
+                <label class="f">Sağlık Notu
+                    <InputText @bind-Value="model.HealthNote" />
+                </label>
+            </div>
+
+            <button type="submit" class="submit" disabled="@kaydediliyor">
+                @(kaydediliyor ? "Kaydediliyor…" : "Değişiklikleri Kaydet")
+            </button>
+            <a class="hint" style="text-decoration:none" href="kayit/@Id">Vazgeç</a>
+        </EditForm>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private RegistrationEditDto? model;
+    private MapPicker? mapPicker;
+    private bool kaydediliyor;
+    private string? hata;
+
+    private async Task AdresiHaritadaBul()
+    {
+        if (model is null) return;
+        var q = $"{model.Address} {model.Area}".Trim();
+        if (mapPicker is not null && !string.IsNullOrWhiteSpace(q))
+            await mapPicker.SearchFor(q);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var r = await Api.GetRegistrationAsync(Id);
+            if (r is null) { hata = "Kayıt bulunamadı."; return; }
+            model = new RegistrationEditDto
+            {
+                StudentName = r.StudentName,
+                StudentTc = r.StudentTc,
+                ParentTc = r.ParentTc,
+                School = r.School,
+                Grade = r.Grade,
+                ServiceType = r.ServiceType,
+                ParentName = r.ParentName,
+                Phone1 = r.Phone1,
+                Phone2 = r.Phone2,
+                Address = r.Address,
+                Area = r.Area ?? "",
+                Latitude = r.Latitude,
+                Longitude = r.Longitude,
+                HealthNote = r.HealthNote ?? ""
+            };
+        }
+        catch (Exception ex) { hata = "Yüklenemedi: " + ex.Message; }
+    }
+
+    private async Task Kaydet()
+    {
+        kaydediliyor = true; hata = null;
+        try
+        {
+            await Api.UpdateRegistrationDetailsAsync(Id, model!);
+            Nav.NavigateTo($"kayit/{Id}");
+        }
+        catch (Exception ex) { hata = "Kaydedilemedi: " + ex.Message; kaydediliyor = false; }
+    }
+}

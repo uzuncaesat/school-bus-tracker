@@ -1,0 +1,116 @@
+@page "/personel"
+@attribute [Authorize(Roles = "Admin")]
+@using OkyanusServis.Web.Models
+@using OkyanusServis.Web.Services
+@inject ApiClient Api
+
+<PageTitle>Personel</PageTitle>
+
+<div class="page-head">
+    <h2>Personel Hesapları</h2>
+    <p>Yönetici ve şoför hesaplarını oluştur, şifre sıfırla, sil.</p>
+</div>
+
+<div class="tcard">
+    <h3>Yeni Personel</h3>
+    <div style="display:grid; grid-template-columns:1fr 1fr auto auto; gap:10px; align-items:end;">
+        <label class="f">E-posta<input class="field-input" @bind="yeniEmail" placeholder="ornek@okyanusservis.com" /></label>
+        <label class="f">Şifre<input class="field-input" type="text" @bind="yeniSifre" placeholder="En az 6 karakter" /></label>
+        <label class="f">Rol
+            <select class="veh-sel" style="width:100%" @bind="yeniRol">
+                <option value="Admin">Yönetici</option>
+                <option value="Driver">Şoför</option>
+            </select>
+        </label>
+        <button class="tbtn" @onclick="Ekle" disabled="@ekleniyor">@(ekleniyor ? "…" : "Ekle")</button>
+    </div>
+    @if (ekleHata is not null) { <div style="color:var(--bad); margin-top:8px; font-size:13px;">@ekleHata</div> }
+    @if (eklendi) { <div style="color:var(--good); margin-top:8px; font-size:13px;">✓ Personel eklendi.</div> }
+</div>
+
+@if (hata is not null)
+{
+    <div class="tcard" style="color:var(--bad)">@hata</div>
+}
+else if (personel is null)
+{
+    <p style="color:var(--ink-3)"><em>Yükleniyor…</em></p>
+}
+else
+{
+    @foreach (var p in personel)
+    {
+        <div class="tcard">
+            <div class="veh-head">
+                <div class="avatar">@Initials(p.Email)</div>
+                <div style="flex:1">
+                    <h3 style="margin:0">@p.Email</h3>
+                    <span class="badge @(p.Role == "Admin" ? "b-serv" : "b-veh")">@(p.Role == "Admin" ? "Yönetici" : "Şoför")</span>
+                </div>
+                <button class="mini-btn" style="color:var(--bad)" @onclick="() => Sil(p.UserId)">Sil</button>
+            </div>
+            <div style="display:flex; gap:8px; align-items:flex-end; margin-top:12px; flex-wrap:wrap;">
+                <label class="f" style="flex:1; min-width:220px; max-width:320px;">Yeni şifre
+                    <input class="field-input" type="text" @bind="pass[p.UserId]" placeholder="En az 6 karakter" />
+                </label>
+                <button class="tbtn ghost" @onclick="() => Sifirla(p.UserId)">Şifreyi Sıfırla</button>
+            </div>
+            @if (sonuc.TryGetValue(p.UserId, out var msg))
+            {
+                <div style="margin-top:6px; font-size:13px; color:@(msg.StartsWith("✓") ? "var(--good)" : "var(--bad)")">@msg</div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private List<StaffAccountDto>? personel;
+    private readonly Dictionary<string, string> pass = new();
+    private readonly Dictionary<string, string> sonuc = new();
+    private string yeniEmail = "", yeniSifre = "", yeniRol = "Admin";
+    private bool ekleniyor, eklendi;
+    private string? ekleHata, hata;
+
+    protected override async Task OnInitializedAsync() => await Yukle();
+
+    private async Task Yukle()
+    {
+        try
+        {
+            personel = await Api.GetStaffAsync();
+            foreach (var p in personel) pass[p.UserId] = "";
+        }
+        catch (Exception ex) { hata = "Yüklenemedi: " + ex.Message; }
+    }
+
+    private async Task Ekle()
+    {
+        ekleniyor = true; ekleHata = null; eklendi = false;
+        var err = await Api.CreateStaffAsync(yeniEmail.Trim(), yeniSifre, yeniRol);
+        if (err is null) { yeniEmail = ""; yeniSifre = ""; eklendi = true; await Yukle(); }
+        else ekleHata = err;
+        ekleniyor = false;
+    }
+
+    private async Task Sifirla(string userId)
+    {
+        var p = pass.TryGetValue(userId, out var v) ? v : "";
+        if (string.IsNullOrWhiteSpace(p) || p.Length < 6) { sonuc[userId] = "Şifre en az 6 karakter olmalı."; return; }
+        var err = await Api.ResetStaffPasswordAsync(userId, p);
+        sonuc[userId] = err is null ? "✓ Şifre güncellendi." : err;
+        if (err is null) pass[userId] = "";
+    }
+
+    private async Task Sil(string userId)
+    {
+        var err = await Api.DeleteStaffAsync(userId);
+        if (err is null) await Yukle();
+        else sonuc[userId] = err;
+    }
+
+    private static string Initials(string s)
+    {
+        s = s.Trim();
+        return s.Length > 0 ? s[0].ToString().ToUpper() : "?";
+    }
+}

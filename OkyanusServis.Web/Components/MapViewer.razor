@@ -1,0 +1,23 @@
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div id="@elementId" style="height:250px; border-radius:8px; border:1px solid #dee2e6;"></div>
+
+@code {
+    [Parameter] public double Latitude { get; set; }
+    [Parameter] public double Longitude { get; set; }
+
+    private readonly string elementId = "mapv-" + Guid.NewGuid().ToString("N");
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await JS.InvokeVoidAsync("okMap.initViewer", elementId, Latitude, Longitude);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("okMap.dispose", elementId); } catch { }
+    }
+}

@@ -1,0 +1,60 @@
+@page "/giris"
+@using OkyanusServis.Web.Services
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+<PageTitle>Giriş</PageTitle>
+
+<div style="max-width:430px; margin:24px auto;">
+    <div class="form-card">
+        <div class="form-hero">
+            <h2>🚌 Yönetim Girişi</h2>
+            <p>Devam etmek için giriş yapın.</p>
+        </div>
+        <EditForm class="tform" Model="model" OnValidSubmit="GirisYap">
+            <DataAnnotationsValidator />
+
+            @if (hata is not null)
+            {
+                <div style="background:var(--bad-soft); color:var(--bad); padding:10px 12px; border-radius:10px; font-size:13px; font-weight:600;">@hata</div>
+            }
+
+            <label class="f">E-posta
+                <InputText @bind-Value="model.Email" />
+            </label>
+            <label class="f">Şifre
+                <InputText type="password" @bind-Value="model.Password" />
+            </label>
+
+            <button type="submit" class="submit" disabled="@yukleniyor">
+                @(yukleniyor ? "Giriş yapılıyor…" : "Giriş Yap")
+            </button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private LoginModel model = new();
+    private bool yukleniyor;
+    private string? hata;
+
+    private async Task GirisYap()
+    {
+        yukleniyor = true;
+        hata = await Auth.LoginAsync(model.Email, model.Password);
+        yukleniyor = false;
+        if (hata is null)
+        {
+            // forceLoad: tam yükleme yap -> kimlik token'dan garantili okunur,
+            // korumalı sayfa "yetkisiz" görüp girişe geri sekmez.
+            var hedef = Auth.IsInRole("Veli") ? "portalim" : "kayitlar";
+            Nav.NavigateTo(hedef, forceLoad: true);
+        }
+    }
+
+    private class LoginModel
+    {
+        public string Email { get; set; } = "";
+        public string Password { get; set; } = "";
+    }
+}

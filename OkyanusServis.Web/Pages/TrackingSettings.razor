@@ -1,0 +1,128 @@
+@page "/takip-ayarlari"
+@attribute [Authorize(Roles = "Admin")]
+@using OkyanusServis.Web.Models
+@using OkyanusServis.Web.Services
+@inject ApiClient Api
+
+<PageTitle>Takip Ayarları</PageTitle>
+
+<div class="page-head">
+    <h2>Takip & Bildirim Ayarları</h2>
+    <p>Arvento bağlantısı, yaklaşım eşiği ve servis saatleri.</p>
+</div>
+
+@if (hata is not null)
+{
+    <div class="tcard" style="color:var(--bad)">@hata</div>
+}
+else if (model is null)
+{
+    <p style="color:var(--ink-3)"><em>Yükleniyor…</em></p>
+}
+else
+{
+    <EditForm Model="model" OnValidSubmit="Kaydet">
+        <DataAnnotationsValidator />
+
+        <div class="tcard">
+            <h3>Genel</h3>
+            <div style="display:flex; flex-direction:column; gap:10px; margin-top:12px;">
+                <label style="display:flex; align-items:center; gap:10px;">
+                    <InputCheckbox @bind-Value="model.Enabled" />
+                    <span><b>Yaklaşım bildirimi açık</b> — kapalıysa motor hiç çalışmaz.</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:10px;">
+                    <InputCheckbox @bind-Value="model.UseMock" />
+                    <span><b>Test modu (mock konum)</b> — Arvento bilgilerin gelene kadar açık kalsın. Gerçek veriye geçince kapat.</span>
+                </label>
+                <div style="font-size:12px; color:@(model.VapidReady ? "var(--good)" : "var(--bad)")">
+                    Push altyapısı: @(model.VapidReady ? "✓ Hazır" : "✗ Anahtar yok")
+                </div>
+            </div>
+        </div>
+
+        <div class="tcard">
+            <h3>Yaklaşım Eşiği</h3>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-top:12px;">
+                <label class="f">Bildirim mesafesi (metre)
+                    <InputNumber class="field-input" @bind-Value="model.ApproachThresholdMeters" />
+                    <span style="font-size:11px; color:var(--ink-3)">Araç eve bu kadar yaklaşınca bildirim gider (örn. 800).</span>
+                </label>
+                <label class="f">Konum tazeleme (saniye)
+                    <InputNumber class="field-input" @bind-Value="model.PollIntervalSeconds" />
+                    <span style="font-size:11px; color:var(--ink-3)">Arvento min. 30 sn. Önerilen 45.</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="tcard">
+            <h3>Servis Saatleri</h3>
+            <p style="font-size:12px; color:var(--ink-3); margin:4px 0 12px;">Motor sadece bu aralıklarda çalışır (boşuna istek atmaz).</p>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px;">
+                <label class="f">Sabah başlangıç<InputText type="time" class="field-input" @bind-Value="model.MorningStart" /></label>
+                <label class="f">Sabah bitiş<InputText type="time" class="field-input" @bind-Value="model.MorningEnd" /></label>
+                <label class="f">Akşam başlangıç<InputText type="time" class="field-input" @bind-Value="model.EveningStart" /></label>
+                <label class="f">Akşam bitiş<InputText type="time" class="field-input" @bind-Value="model.EveningEnd" /></label>
+            </div>
+        </div>
+
+        <div class="tcard">
+            <h3>Arvento Web Servis Bilgileri</h3>
+            <p style="font-size:12px; color:var(--ink-3); margin:4px 0 12px;">
+                Arvento'dan aldığın kullanıcı adı ve PIN'ler. Test modundayken boş kalabilir.
+            </p>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px;">
+                <label class="f">Kullanıcı Adı<InputText class="field-input" @bind-Value="model.ArventoUsername" /></label>
+                <label class="f">PIN1<InputText class="field-input" @bind-Value="model.ArventoPin1" /></label>
+                <label class="f">PIN2<InputText class="field-input" @bind-Value="model.ArventoPin2" /></label>
+                <label class="f">Servis Adresi<InputText class="field-input" @bind-Value="model.ArventoBaseUrl" /></label>
+            </div>
+
+            <div style="margin-top:12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                <button type="button" class="tbtn ghost" @onclick="ArventoTest" disabled="@testEdiliyor">
+                    @(testEdiliyor ? "Test ediliyor…" : "Arvento Bağlantısını Test Et")
+                </button>
+                <span style="font-size:12px; color:var(--ink-3)">Önce Kaydet, sonra test et.</span>
+            </div>
+            @if (testSonuc is not null)
+            {
+                <pre style="margin-top:10px; padding:10px; background:var(--bg-2, #f5f5f5); border-radius:8px; font-size:11px; white-space:pre-wrap; word-break:break-word; max-height:260px; overflow:auto;">@testSonuc</pre>
+            }
+        </div>
+
+        <div style="display:flex; align-items:center; gap:12px; margin-top:4px;">
+            <button type="submit" class="tbtn" disabled="@kaydediliyor">@(kaydediliyor ? "Kaydediliyor…" : "Ayarları Kaydet")</button>
+            @if (kaydedildi) { <span style="color:var(--good); font-weight:600; font-size:13px;">✓ Kaydedildi</span> }
+        </div>
+    </EditForm>
+}
+
+@code {
+    private ServiceConfigDto? model;
+    private bool kaydediliyor, kaydedildi;
+    private string? hata;
+    private bool testEdiliyor;
+    private string? testSonuc;
+
+    private async Task ArventoTest()
+    {
+        testEdiliyor = true; testSonuc = null;
+        try { testSonuc = await Api.TestArventoAsync(); }
+        catch (Exception ex) { testSonuc = "Hata: " + ex.Message; }
+        finally { testEdiliyor = false; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { model = await Api.GetConfigAsync() ?? new ServiceConfigDto(); }
+        catch (Exception ex) { hata = "Yüklenemedi: " + ex.Message; }
+    }
+
+    private async Task Kaydet()
+    {
+        kaydediliyor = true; kaydedildi = false;
+        try { await Api.UpdateConfigAsync(model!); kaydedildi = true; }
+        catch (Exception ex) { hata = "Kaydedilemedi: " + ex.Message; }
+        finally { kaydediliyor = false; }
+    }
+}

@@ -1,0 +1,86 @@
+@page "/veli-hesaplari"
+@attribute [Authorize(Roles = "Admin")]
+@using OkyanusServis.Web.Models
+@using OkyanusServis.Web.Services
+@inject ApiClient Api
+
+<PageTitle>Veli Hesapları</PageTitle>
+
+<div class="page-head">
+    <h2>Veli Hesapları</h2>
+    <p>Veli girişlerini görüntüle, şifrelerini sıfırla.</p>
+</div>
+
+@if (hata is not null)
+{
+    <div class="tcard" style="color:var(--bad)">@hata</div>
+}
+else if (hesaplar is null)
+{
+    <p style="color:var(--ink-3)"><em>Yükleniyor…</em></p>
+}
+else if (hesaplar.Count == 0)
+{
+    <div class="tcard">Henüz veli hesabı tanımlanmamış. Kayıt detayından "Veli Girişi Oluştur" ile ekleyebilirsin.</div>
+}
+else
+{
+    @foreach (var a in hesaplar)
+    {
+        <div class="tcard">
+            <div class="veh-head">
+                <div class="avatar">@Initials(a.Email)</div>
+                <div style="flex:1">
+                    <h3 style="margin:0">@a.Email</h3>
+                    <div class="csub" style="margin:0">@(a.Students.Count > 0 ? string.Join(", ", a.Students) : "Bağlı öğrenci yok")</div>
+                </div>
+            </div>
+            <div style="display:flex; gap:8px; align-items:flex-end; margin-top:12px; flex-wrap:wrap;">
+                <label class="f" style="flex:1; min-width:220px; max-width:320px;">Yeni şifre
+                    <input class="field-input" type="text" @bind="pass[a.UserId]" placeholder="En az 6 karakter" />
+                </label>
+                <button class="tbtn ghost" @onclick="() => Sifirla(a.UserId)">Şifreyi Sıfırla</button>
+            </div>
+            @if (sonuc.TryGetValue(a.UserId, out var msg))
+            {
+                <div style="margin-top:6px; font-size:13px; color:@(msg.StartsWith("✓") ? "var(--good)" : "var(--bad)")">@msg</div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private List<ParentAccountDto>? hesaplar;
+    private readonly Dictionary<string, string> pass = new();
+    private readonly Dictionary<string, string> sonuc = new();
+    private string? hata;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            hesaplar = await Api.GetParentAccountsAsync();
+            foreach (var a in hesaplar) pass[a.UserId] = "";
+        }
+        catch (Exception ex) { hata = "Yüklenemedi: " + ex.Message; }
+    }
+
+    private async Task Sifirla(string userId)
+    {
+        var p = pass.TryGetValue(userId, out var v) ? v : "";
+        if (string.IsNullOrWhiteSpace(p) || p.Length < 6)
+        {
+            sonuc[userId] = "Şifre en az 6 karakter olmalı.";
+            return;
+        }
+        var err = await Api.ResetParentPasswordAsync(userId, p);
+        sonuc[userId] = err is null ? "✓ Şifre güncellendi." : err;
+        if (err is null) pass[userId] = "";
+    }
+
+    private static string Initials(string s)
+    {
+        s = s.Trim();
+        return s.Length > 0 ? s[0].ToString().ToUpper() : "?";
+    }
+}

@@ -1,0 +1,105 @@
+@page "/sofor"
+@attribute [Authorize]
+@using OkyanusServis.Web.Models
+@using OkyanusServis.Web.Services
+@inject ApiClient Api
+
+<PageTitle>Şoför</PageTitle>
+
+<div class="page-head">
+    <h2>Şoför Ekranı</h2>
+    <p>Aracını seç, öğrencileri Bindi/İndi işaretle, veliye anlık bildir.</p>
+</div>
+
+<div class="role-note">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16v-4M12 8h.01"/><circle cx="12" cy="12" r="10"/></svg>
+    <span>"Bindi" / "İndi" işaretleyince veliye anlık bildirim gider.</span>
+</div>
+
+@if (hata is not null)
+{
+    <div class="tcard" style="color:var(--bad)">@hata</div>
+}
+else if (araclar is null)
+{
+    <p style="color:var(--ink-3)"><em>Yükleniyor…</em></p>
+}
+else
+{
+    <div class="tcard">
+        <label class="f" style="max-width:340px">Araç
+            <select class="veh-sel" style="width:100%" @bind="selectedVehicleId">
+                @foreach (var v in araclar)
+                {
+                    <option value="@v.Id">@v.Plate · @v.Driver</option>
+                }
+            </select>
+        </label>
+    </div>
+
+    <div class="tcard">
+        <h3>Öğrenci Listesi (durak sırası)</h3>
+        @if (Liste.Count == 0)
+        {
+            <p class="csub" style="margin-top:8px">Bu araca atanmış öğrenci yok.</p>
+        }
+        else
+        {
+            @foreach (var (k, i) in Liste.Select((x, idx) => (x, idx + 1)))
+            {
+                <div class="stud-row">
+                    <strong>@i.</strong>
+                    <span style="font-weight:600">@k.StudentName</span>
+                    <span style="color:var(--ink-3); font-size:12px">@k.Area</span>
+                    <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+                        <span class="status-tag @DurumClass(k.BoardStatus)">@DurumMetin(k.BoardStatus)</span>
+                        <div class="board-btns">
+                            <button class="bd in @(k.BoardStatus == "Bindi" ? "on" : "")" @onclick='() => Board(k, "Bindi")'>Bindi</button>
+                            <button class="bd out @(k.BoardStatus == "İndi" ? "on" : "")" @onclick='() => Board(k, "İndi")'>İndi</button>
+                        </div>
+                    </div>
+                </div>
+            }
+            @if (sonMesaj is not null)
+            {
+                <div style="margin-top:14px; background:var(--good-soft); color:var(--good); padding:10px 12px; border-radius:10px; font-size:13px; font-weight:600;">@sonMesaj</div>
+            }
+        }
+    </div>
+}
+
+@code {
+    private List<VehicleDto>? araclar;
+    private List<RegistrationDto> tumKayitlar = new();
+    private int selectedVehicleId;
+    private string? hata, sonMesaj;
+
+    private List<RegistrationDto> Liste =>
+        tumKayitlar.Where(k => k.VehicleId == selectedVehicleId).OrderBy(x => x.Area).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            araclar = await Api.GetVehiclesAsync();
+            tumKayitlar = await Api.GetRegistrationsAsync();
+            if (araclar.Count > 0) selectedVehicleId = araclar[0].Id;
+        }
+        catch (Exception ex) { hata = "Yüklenemedi: " + ex.Message; }
+    }
+
+    private static string DurumClass(string? d) => d switch { "Bindi" => "st-in", "İndi" => "st-out", _ => "st-wait" };
+    private static string DurumMetin(string? d) => d switch { "Bindi" => "Serviste", "İndi" => "İndi", _ => "Bekliyor" };
+
+    private async Task Board(RegistrationDto k, string durum)
+    {
+        var saat = DateTime.Now.ToString("HH:mm");
+        await Api.UpdateRegistrationAsync(k.Id, new RegistrationUpdateDto { BoardStatus = durum });
+        var (icon, baslik, mesaj) = durum == "Bindi"
+            ? ("🚌", "Servise bindi", $"{k.StudentName} servise bindi ({saat})")
+            : ("🏫", "İndi", $"{k.StudentName} indi ({saat})");
+        await Api.CreateNotificationAsync(new NotificationCreateDto { RegistrationId = k.Id, Icon = icon, Title = baslik, Message = mesaj });
+        tumKayitlar = await Api.GetRegistrationsAsync();
+        sonMesaj = $"{k.StudentName} → \"{durum}\" işlendi, veliye bildirim gönderildi.";
+    }
+}

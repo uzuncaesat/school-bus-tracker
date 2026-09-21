@@ -1,0 +1,13 @@
+{
+  "name": "Okyanus Servis",
+  "short_name": "Okyanus Servis",
+  "start_url": "/portalim",
+  "display": "standalone",
+  "background_color": "#0e7c7b",
+  "theme_color": "#0e7c7b",
+  "description": "Okyanus Koleji servis takip ve bildirim uygulaması",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

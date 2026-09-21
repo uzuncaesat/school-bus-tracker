@@ -1,0 +1,84 @@
+@page "/duyurular"
+@attribute [Authorize]
+@using OkyanusServis.Web.Models
+@using OkyanusServis.Web.Services
+@inject ApiClient Api
+
+<PageTitle>Duyurular</PageTitle>
+
+<div class="page-head">
+    <h2>Duyurular</h2>
+    <p>Tüm velilere tek mesajla duyuru gönderin.</p>
+</div>
+
+<AuthorizeView Roles="Admin" Context="a">
+    <div class="tcard">
+        <h3>Yeni Duyuru</h3>
+        <p class="csub">Kar tatili, gecikme, güzergah değişikliği… Tüm velilere gider.</p>
+        <textarea class="field-input" style="min-height:90px" @bind="yeniMetin"
+                  placeholder="Örn. Yarın kar tatili nedeniyle servisler çalışmayacaktır."></textarea>
+        <div style="margin-top:12px; display:flex; align-items:center; gap:10px;">
+            <button class="tbtn" @onclick="Gonder" disabled="@(gonderiliyor || string.IsNullOrWhiteSpace(yeniMetin))">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4 20-7z"/></svg>
+                @(gonderiliyor ? "Gönderiliyor…" : "Tüm Velilere Gönder")
+            </button>
+            @if (basarili) { <span style="color:var(--good); font-weight:600; font-size:13px;">✓ Gönderildi</span> }
+        </div>
+    </div>
+</AuthorizeView>
+
+<div class="tcard">
+    <h3>Gönderilen Duyurular</h3>
+    @if (hata is not null)
+    {
+        <div style="color:var(--bad); margin-top:10px;">@hata</div>
+    }
+    else if (duyurular is null)
+    {
+        <p style="color:var(--ink-3); margin-top:10px;"><em>Yükleniyor…</em></p>
+    }
+    else if (duyurular.Count == 0)
+    {
+        <p style="color:var(--ink-3); margin-top:10px;">Henüz duyuru yok.</p>
+    }
+    else
+    {
+        <div style="margin-top:12px;">
+            @foreach (var d in duyurular)
+            {
+                <div class="ann-item">
+                    <div class="at">@d.Text</div>
+                    <div class="am">@d.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<AnnouncementDto>? duyurular;
+    private string yeniMetin = "";
+    private bool gonderiliyor, basarili;
+    private string? hata;
+
+    protected override async Task OnInitializedAsync() => await Yukle();
+
+    private async Task Yukle()
+    {
+        try { duyurular = await Api.GetAnnouncementsAsync(); }
+        catch (Exception ex) { hata = "Duyurular yüklenemedi: " + ex.Message; }
+    }
+
+    private async Task Gonder()
+    {
+        gonderiliyor = true; basarili = false;
+        try
+        {
+            await Api.CreateAnnouncementAsync(new AnnouncementCreateDto { Text = yeniMetin.Trim() });
+            yeniMetin = ""; basarili = true;
+            await Yukle();
+        }
+        catch (Exception ex) { hata = "Gönderilemedi: " + ex.Message; }
+        finally { gonderiliyor = false; }
+    }
+}

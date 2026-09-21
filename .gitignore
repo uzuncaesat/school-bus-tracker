@@ -1,0 +1,31 @@
+# .NET
+bin/
+obj/
+out/
+publish/
+*.user
+*.suo
+*.userprefs
+project.lock.json
+.vs/
+
+# Rider / VS
+.idea/
+*.DhTml
+
+# Yayın / build çıktıları
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+
+# Windows kısayolları / geçici
+*.lnk
+Thumbs.db
+desktop.ini
+
+# Ortam / gizli (varsa)
+appsettings.*.Local.json
+*.pfx
+.cloudflared/
+
+Yonetici olarak calistir

@@ -1,0 +1,456 @@
+@page "/kayit/{Id:int}"
+@attribute [Authorize]
+@using OkyanusServis.Web.Models
+@using OkyanusServis.Web.Services
+@inject ApiClient Api
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+<PageTitle>Kayıt Detayı</PageTitle>
+
+@if (hata is not null)
+{
+    <div class="tcard" style="color:var(--bad)">@hata</div>
+}
+else if (kayit is null)
+{
+    <p style="color:var(--ink-3)"><em>Yükleniyor…</em></p>
+}
+else
+{
+    <div class="page-head" style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <h2 style="margin:0">@kayit.StudentName</h2>
+        <div style="display:flex; gap:8px;">
+            <AuthorizeView Roles="Admin" Context="silCtx">
+                <button class="tbtn ghost" style="color:var(--bad)" @onclick="KaydiSil">Kaydı Sil</button>
+            </AuthorizeView>
+            <a class="tbtn ghost" href="kayitlar">← Liste</a>
+        </div>
+    </div>
+
+    <div class="trow">
+        <div class="tcard">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3 style="margin:0">Bilgiler</h3>
+                <a class="mini-btn" href="kayit/@Id/duzenle">Düzenle</a>
+            </div>
+            <div class="detail-grid" style="padding-top:12px">
+                <div class="field"><div class="lab">Sınıf</div><div class="val">@kayit.Grade · @kayit.School</div></div>
+                <div class="field"><div class="lab">Servis</div><div class="val">@kayit.ServiceType</div></div>
+                <div class="field"><div class="lab">Öğrenci TC</div><div class="val">@(string.IsNullOrEmpty(kayit.StudentTc) ? "—" : kayit.StudentTc)</div></div>
+                <div class="field"><div class="lab">Veli</div><div class="val">@kayit.ParentName</div></div>
+                <div class="field"><div class="lab">Veli TC</div><div class="val">@(string.IsNullOrEmpty(kayit.ParentTc) ? "—" : kayit.ParentTc)</div></div>
+                <div class="field"><div class="lab">Telefon</div><div class="val">@kayit.Phone1 @(string.IsNullOrEmpty(kayit.Phone2) ? "" : " · " + kayit.Phone2)</div></div>
+                <div class="field" style="grid-column:1/-1"><div class="lab">Adres</div><div class="val">@kayit.Address</div></div>
+                <div class="field"><div class="lab">Mahalle</div><div class="val">@kayit.Area</div></div>
+                <div class="field"><div class="lab">Sağlık</div><div class="val">@(string.IsNullOrEmpty(kayit.HealthNote) ? "—" : kayit.HealthNote)</div></div>
+            </div>
+        </div>
+
+        <div class="tcard">
+            <h3>Operasyon</h3>
+            <label class="f" style="margin-top:12px">Araç (birincil güzergah)
+                <select class="veh-sel" style="width:100%" @bind="editVehicleId">
+                    <option value="">Atanmadı</option>
+                    @foreach (var v in araclar)
+                    {
+                        <option value="@v.Id">@v.Plate · @v.Driver</option>
+                    }
+                </select>
+            </label>
+            <label class="f" style="margin-top:12px">İkinci Araç (opsiyonel)
+                <select class="veh-sel" style="width:100%" @bind="editVehicleId2">
+                    <option value="">Yok</option>
+                    @foreach (var v in araclar)
+                    {
+                        <option value="@v.Id">@v.Plate · @v.Driver</option>
+                    }
+                </select>
+            </label>
+            @if (OdemeBuKayitta)
+            {
+                @if (kardesler.Count > 0)
+                {
+                    <div style="font-weight:650; font-size:13px; margin:14px 0 4px; color:var(--accent)">💳 Aile Ödemesi (@(kardesler.Count + 1) çocuk)</div>
+                }
+                <div class="trow" style="margin-top:12px">
+                    <label class="f">Toplam Ücret (₺)
+                        <input type="number" class="veh-sel" style="width:100%" @bind="editFee" />
+                    </label>
+                    <label class="f">Durum
+                        <select class="veh-sel" style="width:100%" @bind="editPayment">
+                            <option value="Beklemede">Beklemede</option>
+                            <option value="Kısmi">Kısmi</option>
+                            <option value="Ödendi">Ödendi</option>
+                        </select>
+                    </label>
+                </div>
+
+                <div style="font-weight:650; font-size:13px; margin:14px 0 4px;">Peşin / Tek Çekim</div>
+                <div class="trow">
+                    <label class="f">Peşin Tutar (₺)
+                        <input type="number" class="veh-sel" style="width:100%" @bind="editDownAmount" />
+                    </label>
+                    <label class="f">Yöntem
+                        <select class="veh-sel" style="width:100%" @bind="editDownMethod">
+                            <option value="">—</option>
+                            @foreach (var m in PaymentOptions.DownMethods)
+                            {
+                                <option value="@m">@m</option>
+                            }
+                        </select>
+                    </label>
+                    <label class="f">Peşin Bankası
+                        <select class="veh-sel" style="width:100%" @bind="editDownBank">
+                            <option value="">—</option>
+                            @foreach (var b in PaymentOptions.Banks)
+                            {
+                                <option value="@b">@b</option>
+                            }
+                        </select>
+                    </label>
+                </div>
+
+                <div style="font-weight:650; font-size:13px; margin:14px 0 4px;">Taksitli</div>
+                <div class="trow">
+                    <label class="f">Taksitli Tutar (₺)
+                        <input type="number" class="veh-sel" style="width:100%" @bind="editInstAmount" />
+                    </label>
+                    <label class="f">Taksit Sayısı
+                        <input type="number" class="veh-sel" style="width:100%" @bind="editInstallments" />
+                    </label>
+                    <label class="f">Taksit Bankası
+                        <select class="veh-sel" style="width:100%" @bind="editInstBank">
+                            <option value="">—</option>
+                            @foreach (var b in PaymentOptions.Banks)
+                            {
+                                <option value="@b">@b</option>
+                            }
+                        </select>
+                    </label>
+                </div>
+            }
+            else
+            {
+                <div style="margin-top:12px; padding:12px; background:var(--accent-soft); border-radius:10px; font-size:13px;">
+                    💳 Bu ailenin ödemesi <b>ana kayıt</b> üzerinden tutulur.
+                    @if (aileAna is not null)
+                    {
+                        <div style="margin-top:6px;">
+                            <a href="kayit/@aileAna.Id" style="color:var(--accent); font-weight:650; text-decoration:none;">@aileAna.StudentName → ödemeyi görüntüle/düzenle</a>
+                        </div>
+                        <div style="margin-top:6px; color:var(--ink-2);">
+                            Toplam: @((aileAna.Fee ?? 0).ToString("N0"))₺ · Alınan: @((aileAna.PaidAmount ?? 0).ToString("N0"))₺ · Kalan: @(((aileAna.Fee ?? 0) - (aileAna.PaidAmount ?? 0)).ToString("N0"))₺
+                        </div>
+                    }
+                </div>
+            }
+            <label class="consent" style="margin-top:14px">
+                <input type="checkbox" @bind="editSkip" />
+                <span>Yarın servise binmeyecek</span>
+            </label>
+            <div class="rec-actions">
+                <button class="tbtn" @onclick="Kaydet" disabled="@kaydediliyor">@(kaydediliyor ? "Kaydediliyor…" : "Değişiklikleri Kaydet")</button>
+                @if (basarili) { <span style="color:var(--good); font-weight:600; font-size:13px;">✓ Kaydedildi</span> }
+            </div>
+        </div>
+    </div>
+
+    <div class="tcard">
+        <h3>İç Notlar</h3>
+        <p class="csub">Sadece personel görür — veliye gösterilmez.</p>
+        <textarea class="field-input" style="min-height:80px" @bind="editNotes"
+                  placeholder="Bu kayıtla ilgili iç not (ör. ödeme sözü, özel durum)…"></textarea>
+        <div class="rec-actions">
+            <button class="tbtn" @onclick="Kaydet" disabled="@kaydediliyor">@(kaydediliyor ? "Kaydediliyor…" : "Kaydet")</button>
+            @if (basarili) { <span style="color:var(--good); font-weight:600; font-size:13px;">✓ Kaydedildi</span> }
+        </div>
+    </div>
+
+    <div class="tcard">
+        <h3>👨‍👩‍👧 Kardeşler / Aile</h3>
+        @if (kardesler.Count == 0)
+        {
+            <p class="csub">Bu öğrencinin bağlı kardeşi yok.</p>
+        }
+        else
+        {
+            <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">
+                @foreach (var s in kardesler)
+                {
+                    <div class="stud-row">
+                        <a href="kayit/@s.Id" style="color:var(--accent); text-decoration:none; font-weight:600;">@s.StudentName</a>
+                        <span class="g">@s.Grade @(string.IsNullOrEmpty(s.VehiclePlate) ? "" : "· " + s.VehiclePlate)</span>
+                    </div>
+                }
+            </div>
+            <div style="font-size:12px; color:var(--ink-3); margin-top:8px;">Aynı veli girişi tüm kardeşleri görür.</div>
+        }
+
+        <AuthorizeView Roles="Admin" Context="sib">
+            <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--line); display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <select class="veh-sel" style="flex:1; min-width:160px" @bind="secilenKardes">
+                    <option value="0">— kardeş seç —</option>
+                    @foreach (var r in KardesAdaylari())
+                    {
+                        <option value="@r.Id">@r.StudentName (@r.Grade)</option>
+                    }
+                </select>
+                <button class="mini-btn" @onclick="KardesBagla" disabled="@(secilenKardes == 0)">Kardeş Bağla</button>
+                @if (kardesler.Count > 0)
+                {
+                    <button class="mini-btn" style="color:var(--bad)" @onclick="KardesAyir">Aileden Ayır</button>
+                }
+            </div>
+            @if (kardesMsj is not null) { <div style="font-size:12px; color:var(--good); font-weight:600; margin-top:6px;">@kardesMsj</div> }
+        </AuthorizeView>
+    </div>
+
+    @if (kayit.Latitude.HasValue && kayit.Longitude.HasValue)
+    {
+        <div class="tcard">
+            <h3>Konum</h3>
+            <div style="margin-top:10px"><MapViewer Latitude="kayit.Latitude.Value" Longitude="kayit.Longitude.Value" /></div>
+        </div>
+    }
+
+    <div class="tcard">
+        <h3>Belgeler (Sözleşme)</h3>
+        <p class="csub">Velinin imzalı servis sözleşmesini yükleyin — PDF, Word, JPG, PNG · en fazla 10 MB.</p>
+
+        <AuthorizeView Context="belgeAuth">
+            <label class="tbtn ghost" style="cursor:pointer; display:inline-flex;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                Belge Yükle
+                <InputFile OnChange="Yukle" style="display:none" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" />
+            </label>
+        </AuthorizeView>
+        @if (yukleniyor) { <span style="margin-left:10px; color:var(--ink-3); font-size:13px;">Yükleniyor…</span> }
+        @if (belgeHata is not null) { <div style="color:var(--bad); margin-top:8px; font-size:13px;">@belgeHata</div> }
+
+        <div style="margin-top:12px">
+            @if (belgeler.Count == 0)
+            {
+                <div style="color:var(--ink-3); font-size:13px;">Henüz belge yok.</div>
+            }
+            else
+            {
+                @foreach (var b in belgeler)
+                {
+                    <div class="stud-row">
+                        <span>📄 @b.FileName</span>
+                        <div style="margin-left:auto; display:flex; align-items:center; gap:10px;">
+                            <span style="font-size:12px; color:var(--ink-3)">@Boyut(b.Size) · @b.UploadedAt.ToLocalTime().ToString("dd.MM.yyyy")</span>
+                            <button class="mini-btn" @onclick="() => Indir(b)">İndir</button>
+                            <AuthorizeView Roles="Admin" Context="belgeSil">
+                                <button class="mini-btn" style="color:var(--bad)" @onclick="() => BelgeSil(b.Id)">Sil</button>
+                            </AuthorizeView>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
+    <AuthorizeView Roles="Admin" Context="veliHesap">
+        <div class="tcard">
+            <h3>Veli Girişi</h3>
+            @if (kayit.HasParentAccount)
+            {
+                <p style="color:var(--good); font-weight:600; margin:6px 0 0;">✓ Bu kayda veli girişi tanımlı.</p>
+                <p class="csub">Veli, e-posta ve şifresiyle girip kendi çocuğunun bilgisini ve sözleşmesini görebilir.</p>
+            }
+            else
+            {
+                <p class="csub">Veliye giriş bilgisi tanımlayın; kendi çocuğunun bilgisini ve sözleşmesini görebilsin. (Kardeş için aynı e-postayı kullanın.)</p>
+                <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:10px; align-items:end;">
+                    <label class="f">E-posta<input class="field-input" @bind="veliEmail" placeholder="veli@ornek.com" /></label>
+                    <label class="f">Şifre<input class="field-input" type="text" @bind="veliSifre" placeholder="En az 6 karakter" /></label>
+                    <button class="tbtn" @onclick="VeliHesabiOlustur" disabled="@veliOlusturuluyor">@(veliOlusturuluyor ? "…" : "Oluştur")</button>
+                </div>
+                @if (veliHata is not null) { <div style="color:var(--bad); margin-top:8px; font-size:13px;">@veliHata</div> }
+            }
+        </div>
+    </AuthorizeView>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private RegistrationDto? kayit;
+    private List<VehicleDto> araclar = new();
+    private string? hata;
+    private bool kaydediliyor, basarili;
+
+    private int? editVehicleId;
+    private int? editVehicleId2;
+    private string editPayment = "Beklemede";
+    private decimal? editFee;
+    private decimal? editDownAmount;
+    private string editDownMethod = "";
+    private string editDownBank = "";
+    private decimal? editInstAmount;
+    private string editInstBank = "";
+    private int? editInstallments;
+    private string editNotes = "";
+    private string editBoard = "";
+    private bool editSkip;
+
+    private List<DocumentDto> belgeler = new();
+    private bool yukleniyor;
+    private string? belgeHata;
+
+    private string veliEmail = "";
+    private string veliSifre = "";
+    private bool veliOlusturuluyor;
+    private string? veliHata;
+
+    // Kardeşler
+    private List<SiblingBriefDto> kardesler = new();
+    private List<RegistrationDto> tumKayitlar = new();
+    private int secilenKardes;
+    private string? kardesMsj;
+
+    // Ödeme bu kayıtta mı tutulur? (ailenin ana kaydı ya da tek çocuk = SiblingOfId yok)
+    private bool OdemeBuKayitta => kayit is not null && kayit.SiblingOfId is null;
+    private RegistrationDto? aileAna;   // kardeşse ailenin ana kaydı
+
+    private IEnumerable<RegistrationDto> KardesAdaylari()
+    {
+        var haric = new HashSet<int>(kardesler.Select(k => k.Id)) { Id };
+        return tumKayitlar.Where(r => !haric.Contains(r.Id)).OrderBy(r => r.StudentName);
+    }
+
+    private async Task KardesBagla()
+    {
+        if (secilenKardes == 0) return;
+        try
+        {
+            await Api.LinkSiblingAsync(Id, secilenKardes);
+            secilenKardes = 0;
+            kardesler = await Api.GetSiblingsAsync(Id);
+            kardesMsj = "✓ Kardeş bağlandı";
+        }
+        catch (Exception ex) { kardesMsj = "Hata: " + ex.Message; }
+    }
+
+    private async Task KardesAyir()
+    {
+        try
+        {
+            await Api.UnlinkSiblingAsync(Id);
+            kardesler = await Api.GetSiblingsAsync(Id);
+            kardesMsj = "✓ Aileden ayrıldı";
+        }
+        catch (Exception ex) { kardesMsj = "Hata: " + ex.Message; }
+    }
+
+    private async Task KaydiSil()
+    {
+        if (kayit is null) return;
+        var onay = await JS.InvokeAsync<bool>("confirm", $"{kayit.StudentName} kaydı ve tüm belgeleri silinecek. Emin misiniz?");
+        if (!onay) return;
+        try { await Api.DeleteRegistrationAsync(Id); Nav.NavigateTo("kayitlar"); }
+        catch (Exception ex) { hata = "Silinemedi: " + ex.Message; }
+    }
+
+    private async Task VeliHesabiOlustur()
+    {
+        veliOlusturuluyor = true; veliHata = null;
+        var err = await Api.CreateParentAccountAsync(Id, veliEmail.Trim(), veliSifre);
+        if (err is null)
+        {
+            veliEmail = ""; veliSifre = "";
+            if (kayit is not null) kayit.HasParentAccount = true;
+        }
+        else { veliHata = err; }
+        veliOlusturuluyor = false;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            araclar = await Api.GetVehiclesAsync();
+            kayit = await Api.GetRegistrationAsync(Id);
+            if (kayit is not null)
+            {
+                editVehicleId = kayit.VehicleId;
+                editVehicleId2 = kayit.SecondVehicleId;
+                editPayment = kayit.PaymentStatus;
+                editFee = kayit.Fee;
+                editDownAmount = kayit.DownPayment;
+                editDownMethod = kayit.DownPaymentMethod ?? "";
+                editDownBank = kayit.DownPaymentBank ?? "";
+                editInstAmount = kayit.InstallmentAmount;
+                editInstBank = kayit.InstallmentBank ?? "";
+                editInstallments = kayit.Installments;
+                editNotes = kayit.Notes ?? "";
+                editBoard = kayit.BoardStatus ?? "";
+                editSkip = kayit.SkipTomorrow;
+            }
+            await LoadBelgeler();
+            kardesler = await Api.GetSiblingsAsync(Id);
+            try { tumKayitlar = await Api.GetRegistrationsAsync(); } catch { }
+            // Kardeşse ailenin ana kaydını (ödeme burada) getir
+            if (kayit?.SiblingOfId is int anaId)
+                aileAna = await Api.GetRegistrationAsync(anaId);
+        }
+        catch (Exception ex) { hata = "Kayıt yüklenemedi: " + ex.Message; }
+    }
+
+    private async Task LoadBelgeler()
+    {
+        try { belgeler = await Api.GetDocumentsAsync(Id); } catch { }
+    }
+
+    private async Task Yukle(InputFileChangeEventArgs e)
+    {
+        if (e.File is null) return;
+        yukleniyor = true; belgeHata = null;
+        try { await Api.UploadDocumentAsync(Id, e.File); await LoadBelgeler(); }
+        catch (Exception ex) { belgeHata = "Yüklenemedi: " + ex.Message; }
+        finally { yukleniyor = false; }
+    }
+
+    private async Task Indir(DocumentDto b)
+    {
+        var bytes = await Api.DownloadDocumentAsync(b.Id);
+        await JS.InvokeVoidAsync("okFiles.download", b.FileName, Convert.ToBase64String(bytes), b.ContentType);
+    }
+
+    private async Task BelgeSil(int id)
+    {
+        try { await Api.DeleteDocumentAsync(id); await LoadBelgeler(); }
+        catch (Exception ex) { belgeHata = "Silinemedi: " + ex.Message; }
+    }
+
+    private static string Boyut(long b) =>
+        b < 1024 ? $"{b} B" : b < 1024 * 1024 ? $"{b / 1024} KB" : $"{b / (1024 * 1024)} MB";
+
+    private async Task Kaydet()
+    {
+        kaydediliyor = true; basarili = false;
+        try
+        {
+            kayit = await Api.UpdateRegistrationAsync(Id, new RegistrationUpdateDto
+            {
+                VehicleId = editVehicleId,
+                SecondVehicleId = editVehicleId2,
+                PaymentStatus = editPayment,
+                Fee = editFee,
+                DownPayment = editDownAmount,
+                DownPaymentMethod = string.IsNullOrEmpty(editDownMethod) ? null : editDownMethod,
+                DownPaymentBank = string.IsNullOrEmpty(editDownBank) ? null : editDownBank,
+                InstallmentAmount = editInstAmount,
+                InstallmentBank = string.IsNullOrEmpty(editInstBank) ? null : editInstBank,
+                Installments = editInstallments,
+                Notes = editNotes,
+                SkipTomorrow = editSkip
+            });
+            basarili = true;
+        }
+        catch (Exception ex) { hata = "Güncellenemedi: " + ex.Message; }
+        finally { kaydediliyor = false; }
+    }
+}

@@ -1,0 +1,139 @@
+@page "/tahsilat"
+@attribute [Authorize(Roles = "Admin,Driver")]
+@using OkyanusServis.Web.Models
+@using OkyanusServis.Web.Services
+@inject ApiClient Api
+
+<PageTitle>Tahsilat</PageTitle>
+
+<div class="page-head">
+    <h2>Tahsilat</h2>
+    <p>Ödeme özeti ve borçlular (kalan tutarı olan veliler).</p>
+</div>
+
+@if (hata is not null)
+{
+    <div class="tcard" style="color:var(--bad)">@hata</div>
+}
+else if (kayitlar is null)
+{
+    <p style="color:var(--ink-3)"><em>Yükleniyor…</em></p>
+}
+else
+{
+    <div class="stats">
+        <div class="stat"><div class="k"><span class="dot" style="background:var(--accent)"></span>Toplam Ücret</div><div class="v tnum">@ToplamUcret.ToString("N0")₺</div></div>
+        <div class="stat"><div class="k"><span class="dot" style="background:var(--good)"></span>Tahsil Edilen</div><div class="v tnum">@ToplamOdenen.ToString("N0")₺</div></div>
+        <div class="stat"><div class="k"><span class="dot" style="background:var(--bad)"></span>Kalan</div><div class="v tnum">@ToplamKalan.ToString("N0")₺</div></div>
+        <div class="stat"><div class="k"><span class="dot" style="background:var(--wait)"></span>Borçlu</div><div class="v tnum">@Borclular.Count</div></div>
+    </div>
+
+    <div class="tcard">
+        <h3>🏦 Bankaya Göre Tahsilat</h3>
+        <p class="csub">Peşin ve taksit tutarlarının bankaya göre dağılımı.</p>
+        @if (BankaDagilimi.Count == 0 && BankasizTutar == 0)
+        {
+            <div style="color:var(--ink-3); font-size:13px; margin-top:8px;">Henüz banka bilgili tahsilat girilmemiş.</div>
+        }
+        else
+        {
+            <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">
+                @foreach (var b in BankaDagilimi)
+                {
+                    <div class="stud-row">
+                        <span>🏦 @b.Banka</span>
+                        <span style="margin-left:auto; font-weight:700" class="tnum">@b.Tutar.ToString("N0")₺</span>
+                    </div>
+                }
+                @if (BankasizTutar > 0)
+                {
+                    <div class="stud-row">
+                        <span>💵 Nakit / Elden (bankasız)</span>
+                        <span style="margin-left:auto; font-weight:700" class="tnum">@BankasizTutar.ToString("N0")₺</span>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="tcard">
+        <h3>Borçlular</h3>
+        @if (Borclular.Count == 0)
+        {
+            <div style="color:var(--good); font-weight:600; margin-top:8px;">🎉 Eksik ödemesi olan veli yok.</div>
+        }
+        else
+        {
+            <div style="margin-top:6px">
+                @foreach (var k in Borclular)
+                {
+                    <div class="stud-row">
+                        <a href="kayit/@k.Id" style="color:var(--accent); text-decoration:none; font-weight:600;">@k.StudentName</a>
+                        <div style="margin-left:auto; display:flex; align-items:center; gap:12px;">
+                            <span style="font-size:12px; color:var(--ink-3)">@k.ParentName · Ödenen @((k.PaidAmount ?? 0).ToString("N0"))₺ / @((k.Fee ?? 0).ToString("N0"))₺</span>
+                            <span class="badge b-none">Kalan @Kalan(k).ToString("N0")₺</span>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<RegistrationDto>? kayitlar;
+    private string? hata;
+
+    private static decimal Kalan(RegistrationDto k) => (k.Fee ?? 0) - (k.PaidAmount ?? 0);
+
+    // Ödeme ailenin ana kaydında tutulur → kardeşleri (SiblingOfId dolu) hariç tut, çift sayma
+    private IEnumerable<RegistrationDto> AnaKayitlar =>
+        (kayitlar ?? new()).Where(k => k.SiblingOfId is null);
+
+    private decimal ToplamUcret => AnaKayitlar.Sum(k => k.Fee ?? 0);
+    private decimal ToplamOdenen => AnaKayitlar.Sum(k => k.PaidAmount ?? 0);
+    private decimal ToplamKalan => AnaKayitlar.Sum(k => Kalan(k));
+    private List<RegistrationDto> Borclular =>
+        AnaKayitlar.Where(k => Kalan(k) > 0).OrderByDescending(Kalan).ToList();
+
+    // Bankaya göre tahsilat: peşin bankası + taksit bankası bazında toplam
+    private List<(string Banka, decimal Tutar)> BankaDagilimi
+    {
+        get
+        {
+            var d = new Dictionary<string, decimal>();
+            void Ekle(string? banka, decimal? tutar)
+            {
+                if (!string.IsNullOrEmpty(banka) && (tutar ?? 0) > 0)
+                    d[banka] = (d.TryGetValue(banka, out var v) ? v : 0) + (tutar ?? 0);
+            }
+            foreach (var k in AnaKayitlar)
+            {
+                Ekle(k.DownPaymentBank, k.DownPayment);
+                Ekle(k.InstallmentBank, k.InstallmentAmount);
+            }
+            return d.Select(x => (x.Key, x.Value)).OrderByDescending(x => x.Item2).ToList();
+        }
+    }
+
+    // Bankası girilmemiş (nakit/elden) tahsilat toplamı
+    private decimal BankasizTutar
+    {
+        get
+        {
+            decimal t = 0;
+            foreach (var k in AnaKayitlar)
+            {
+                if (string.IsNullOrEmpty(k.DownPaymentBank)) t += (k.DownPayment ?? 0);
+                if (string.IsNullOrEmpty(k.InstallmentBank)) t += (k.InstallmentAmount ?? 0);
+            }
+            return t;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { kayitlar = await Api.GetRegistrationsAsync(); }
+        catch (Exception ex) { hata = "Yüklenemedi: " + ex.Message; }
+    }
+}

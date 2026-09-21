@@ -1,0 +1,283 @@
+@page "/araclar"
+@attribute [Authorize]
+@using OkyanusServis.Web.Models
+@using OkyanusServis.Web.Services
+@inject ApiClient Api
+@inject IJSRuntime JS
+
+<PageTitle>Araçlar</PageTitle>
+
+<div class="page-head">
+    <h2>Araçlar & Güzergah</h2>
+    <p>Araç doluluğu ve her aracın öğrenci listesi.</p>
+</div>
+
+<AuthorizeView Roles="Admin" Context="a">
+    <div class="tcard">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:180px">
+                <h3 style="margin:0">📡 Arvento'dan İçe Aktar</h3>
+                <div style="font-size:12px; color:var(--ink-3)">Takip cihazındaki araçları (plaka + cihaz no) tek tıkla ekler.</div>
+            </div>
+            <button class="tbtn" @onclick="ArventodanAktar" disabled="@aktariliyor">
+                @(aktariliyor ? "Aktarılıyor…" : "Arvento'dan Araçları İçe Aktar")
+            </button>
+        </div>
+        @if (aktarMsj is not null)
+        {
+            <div style="margin-top:10px; font-size:13px; font-weight:600; color:var(--good)">@aktarMsj</div>
+        }
+    </div>
+
+    <div class="tcard">
+        <h3>Yeni Araç Ekle</h3>
+        <EditForm Model="yeni" OnValidSubmit="Ekle">
+            <DataAnnotationsValidator />
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px;">
+                <label class="f">Plaka<InputText class="field-input" @bind-Value="yeni.Plate" placeholder="34 ABC 123" /></label>
+                <label class="f">Şoför<InputText class="field-input" @bind-Value="yeni.Driver" /></label>
+                <label class="f">Telefon<InputText class="field-input" @bind-Value="yeni.Phone" /></label>
+                <label class="f">Kapasite<InputNumber class="field-input" @bind-Value="yeni.Capacity" /></label>
+                <label class="f">Renk<InputText type="color" class="field-input" style="height:42px; padding:4px;" @bind-Value="yeni.Color" /></label>
+                <label class="f">Cihaz No (Arvento)<InputText class="field-input" @bind-Value="yeni.ArventoNode" placeholder="opsiyonel" /></label>
+            </div>
+            <div style="margin-top:14px; display:flex; align-items:center; gap:10px;">
+                <button type="submit" class="tbtn" disabled="@ekleniyor">@(ekleniyor ? "Ekleniyor…" : "Araç Ekle")</button>
+                @if (eklendi) { <span style="color:var(--good); font-weight:600; font-size:13px;">✓ Eklendi</span> }
+            </div>
+        </EditForm>
+    </div>
+</AuthorizeView>
+
+@if (hata is not null)
+{
+    <div class="tcard" style="color:var(--bad)">@hata</div>
+}
+else if (araclar is null)
+{
+    <p style="color:var(--ink-3)"><em>Yükleniyor…</em></p>
+}
+else
+{
+    <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(330px,1fr)); gap:14px;">
+        @foreach (var v in araclar)
+        {
+            var ogrenciler = Ogrenciler(v.Id);
+            var dolu = ogrenciler.Count;
+            var doluluk = v.Capacity > 0 ? (int)Math.Round(dolu * 100.0 / v.Capacity) : 0;
+            var bos = v.Capacity - dolu;
+            <div class="tcard" style="margin-bottom:0">
+                <div class="veh-head">
+                    <div class="veh-ic" style="background:@v.Color">🚌</div>
+                    <div style="flex:1">
+                        <h3 style="margin:0">@v.Plate</h3>
+                        <div style="font-size:12px; color:var(--ink-3)">@v.Driver · @v.Phone</div>
+                    </div>
+                    <div style="text-align:right">
+                        <div style="font-weight:700; font-size:18px" class="tnum">@dolu/@v.Capacity</div>
+                        <div style="font-size:11px; color:var(--ink-3)">koltuk</div>
+                    </div>
+                    <AuthorizeView Roles="Admin" Context="ad">
+                        <button class="mini-btn" style="color:var(--bad)" title="@(dolu > 0 ? "Önce öğrencileri başka araca alın" : "Aracı sil")"
+                                disabled="@(dolu > 0)" @onclick="() => Sil(v.Id)">Sil</button>
+                    </AuthorizeView>
+                </div>
+
+                <div class="cap-bar"><div class="cap-fill" style="width:@(doluluk)%; background:@(doluluk > 90 ? "var(--bad)" : v.Color)"></div></div>
+                <div style="font-size:12px; color:var(--ink-3)">@(bos > 0 ? $"{bos} yer boş" : "DOLU")</div>
+
+                <AuthorizeView Roles="Admin" Context="nd">
+                    <div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--line); display:flex; gap:8px; align-items:center;">
+                        <span style="font-size:12px; color:var(--ink-3); white-space:nowrap;">📡 Takip Cihazı No</span>
+                        <input class="field-input" style="flex:1; min-width:0;" @bind="v.ArventoNode" placeholder="Arvento node" />
+                        <button class="mini-btn" @onclick="() => NodeKaydet(v)">Kaydet</button>
+                    </div>
+                    @if (kaydedilenId == v.Id) { <div style="font-size:12px; color:var(--good); font-weight:600; margin-top:4px;">✓ Kaydedildi</div> }
+                </AuthorizeView>
+
+                <div style="display:flex; align-items:center; justify-content:space-between; margin:12px 0 2px;">
+                    <span style="font-weight:650; font-size:13px;">Güzergah Sırası (@ogrenciler.Count)</span>
+                    @if (ogrenciler.Count > 0)
+                    {
+                        <button class="mini-btn" @onclick="() => GuzergahExcel(v)">📄 Çıktı Al / Yazdır</button>
+                    }
+                </div>
+                @if (ogrenciler.Count == 0)
+                {
+                    <div style="color:var(--ink-3); font-size:13px;">Bu araca henüz öğrenci atanmadı.</div>
+                }
+                else
+                {
+                    @for (int i = 0; i < ogrenciler.Count; i++)
+                    {
+                        var o = ogrenciler[i];
+                        var idx = i;
+                        <div class="stud-row" style="display:flex; align-items:flex-start; gap:8px;">
+                            <span style="min-width:22px; text-align:center; font-weight:700; color:var(--accent); padding-top:2px;">@(i + 1).</span>
+                            <div style="flex:1; min-width:0;">
+                                <a href="kayit/@o.Id" style="color:var(--accent); text-decoration:none; font-weight:600;">@o.StudentName</a>
+                                <span style="font-size:11px; color:var(--ink-3);"> · @o.Grade</span>
+                                @if (o.VehicleId != v.Id)
+                                {
+                                    <span style="font-size:10px; font-weight:700; color:var(--wait); margin-left:4px;">2. ARAÇ</span>
+                                }
+                                <div style="font-size:12px; color:var(--ink-2); margin-top:2px;">📍 @o.Address@(string.IsNullOrEmpty(o.Area) ? "" : " (" + o.Area + ")")</div>
+                            </div>
+                            <AuthorizeView Roles="Admin" Context="so">
+                                <span style="display:flex; gap:2px; padding-top:2px;">
+                                    <button class="mini-btn" disabled="@(idx == 0)" @onclick="() => Tasi(v.Id, idx, -1)" title="Yukarı al">▲</button>
+                                    <button class="mini-btn" disabled="@(idx == ogrenciler.Count - 1)" @onclick="() => Tasi(v.Id, idx, 1)" title="Aşağı al">▼</button>
+                                </span>
+                            </AuthorizeView>
+                        </div>
+                    }
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<VehicleDto>? araclar;
+    private List<RegistrationDto> tumKayitlar = new();
+    private VehicleCreateDto yeni = new();
+    private bool ekleniyor, eklendi;
+    private int? kaydedilenId;
+    private string? hata;
+    private bool aktariliyor;
+    private string? aktarMsj;
+
+    private List<RegistrationDto> Ogrenciler(int vehicleId) =>
+        tumKayitlar.Where(k => k.VehicleId == vehicleId || k.SecondVehicleId == vehicleId)
+            .OrderBy(k => (k.VehicleId == vehicleId ? k.RouteOrder : k.SecondRouteOrder) ?? int.MaxValue)
+            .ThenBy(k => k.Area)
+            .ToList();
+
+    // 5 ve 9. sınıflara "Akşam servis kullanmayacak" notu
+    private static string AksamNotu(string? grade)
+    {
+        var s = (grade ?? "").TrimStart();
+        int i = 0;
+        while (i < s.Length && char.IsDigit(s[i])) i++;
+        if (i > 0 && int.TryParse(s.Substring(0, i), out var seviye) && (seviye == 5 || seviye == 9))
+            return "Akşam servis kullanmayacak";
+        return "";
+    }
+
+    private static string Esc(string? s) => (s ?? "")
+        .Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+
+    private async Task GuzergahExcel(VehicleDto v)
+    {
+        var liste = Ogrenciler(v.Id);
+        if (liste.Count == 0) return;
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append(@"<!DOCTYPE html><html lang='tr'><head><meta charset='utf-8'>
+<title>Güzergah - " + Esc(v.Plate) + @"</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#111;}
+  h2{margin:0 0 2px;}
+  .sub{color:#555;font-size:13px;margin-bottom:14px;}
+  table{border-collapse:collapse;width:100%;}
+  th,td{border:1px solid #444;padding:7px 9px;font-size:13px;text-align:left;vertical-align:top;}
+  th{background:#0e7c7b;color:#fff;}
+  tr:nth-child(even){background:#f4f4f4;}
+  td.sira{text-align:center;font-weight:bold;width:36px;}
+  td.not{color:#c00;font-weight:bold;}
+  .yaz{margin:16px 0;}
+  button{padding:8px 16px;font-size:14px;cursor:pointer;}
+  @media print{.yaz{display:none;}}
+</style></head><body>");
+        sb.Append($"<h2>Güzergah: {Esc(v.Plate)}</h2>");
+        sb.Append($"<div class='sub'>Şoför: {Esc(v.Driver)} &nbsp;·&nbsp; Toplam: {liste.Count} öğrenci &nbsp;·&nbsp; {DateTime.Now:dd.MM.yyyy}</div>");
+        sb.Append("<div class='yaz'><button onclick='window.print()'>🖨️ Yazdır</button></div>");
+        sb.Append("<table><thead><tr><th>#</th><th>Öğrenci</th><th>Sınıf</th><th>Adres</th><th>İletişim</th><th>Not</th></tr></thead><tbody>");
+        int i = 1;
+        foreach (var o in liste)
+        {
+            var iletisim = string.IsNullOrEmpty(o.Phone2) ? o.Phone1 : $"{o.Phone1} / {o.Phone2}";
+            sb.Append($"<tr><td class='sira'>{i}</td><td>{Esc(o.StudentName)}</td><td>{Esc(o.Grade)}</td><td>{Esc(o.Address)}</td><td>{Esc(iletisim)}</td><td class='not'>{Esc(AksamNotu(o.Grade))}</td></tr>");
+            i++;
+        }
+        sb.Append("</tbody></table></body></html>");
+
+        await JS.InvokeVoidAsync("okFiles.printHtml", sb.ToString());
+    }
+
+    private async Task Tasi(int vehicleId, int index, int dir)
+    {
+        var list = Ogrenciler(vehicleId);
+        int j = index + dir;
+        if (j < 0 || j >= list.Count) return;
+        (list[index], list[j]) = (list[j], list[index]);
+        try
+        {
+            await Api.SetRouteOrderAsync(vehicleId, list.Select(x => x.Id).ToList());
+            await Yukle();
+        }
+        catch (Exception ex) { hata = "Sıra kaydedilemedi: " + ex.Message; }
+    }
+
+    private async Task ArventodanAktar()
+    {
+        aktariliyor = true; aktarMsj = null;
+        try
+        {
+            var r = await Api.ImportArventoVehiclesAsync();
+            if (r is not null)
+                aktarMsj = string.IsNullOrEmpty(r.Message)
+                    ? $"✓ {r.Created} yeni eklendi, {r.Updated} güncellendi (toplam {r.Total} cihaz)."
+                    : r.Message;
+            await Yukle();
+        }
+        catch (Exception ex) { hata = "İçe aktarılamadı: " + ex.Message; }
+        finally { aktariliyor = false; }
+    }
+
+    protected override async Task OnInitializedAsync() => await Yukle();
+
+    private async Task Yukle()
+    {
+        try
+        {
+            araclar = await Api.GetVehiclesAsync();
+            tumKayitlar = await Api.GetRegistrationsAsync();
+        }
+        catch (Exception ex) { hata = "Yüklenemedi: " + ex.Message; }
+    }
+
+    private async Task Ekle()
+    {
+        ekleniyor = true; eklendi = false;
+        try
+        {
+            await Api.CreateVehicleAsync(yeni);
+            yeni = new VehicleCreateDto();
+            eklendi = true;
+            await Yukle();
+        }
+        catch (Exception ex) { hata = "Araç eklenemedi: " + ex.Message; }
+        finally { ekleniyor = false; }
+    }
+
+    private async Task Sil(int id)
+    {
+        try { await Api.DeleteVehicleAsync(id); await Yukle(); }
+        catch (Exception ex) { hata = "Silinemedi: " + ex.Message; }
+    }
+
+    private async Task NodeKaydet(VehicleDto v)
+    {
+        try
+        {
+            await Api.UpdateVehicleAsync(v.Id, new VehicleUpdateDto
+            {
+                Plate = v.Plate, Driver = v.Driver, Phone = v.Phone,
+                Capacity = v.Capacity, Color = v.Color, ArventoNode = v.ArventoNode
+            });
+            kaydedilenId = v.Id;
+        }
+        catch (Exception ex) { hata = "Kaydedilemedi: " + ex.Message; }
+    }
+}

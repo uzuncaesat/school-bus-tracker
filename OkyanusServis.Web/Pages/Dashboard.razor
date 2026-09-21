@@ -1,0 +1,93 @@
+@page "/ozet"
+@attribute [Authorize(Roles = "Admin,Driver")]
+@using OkyanusServis.Web.Models
+@using OkyanusServis.Web.Services
+@inject ApiClient Api
+
+<PageTitle>Özet</PageTitle>
+
+<div class="page-head">
+    <h2>Özet</h2>
+    <p>Genel bakış ve istatistikler.</p>
+</div>
+
+@if (hata is not null)
+{
+    <div class="tcard" style="color:var(--bad)">@hata</div>
+}
+else if (s is null)
+{
+    <p style="color:var(--ink-3)"><em>Yükleniyor…</em></p>
+}
+else
+{
+    <div class="stats">
+        <div class="stat"><div class="k"><span class="dot" style="background:var(--accent)"></span>Toplam Kayıt</div><div class="v tnum">@s.TotalRegistrations</div></div>
+        <div class="stat"><div class="k"><span class="dot" style="background:var(--good)"></span>Ödendi</div><div class="v tnum">@s.Paid</div></div>
+        <div class="stat"><div class="k"><span class="dot" style="background:var(--wait)"></span>Ödeme Bekleyen</div><div class="v tnum">@s.Pending</div></div>
+        <div class="stat"><div class="k"><span class="dot" style="background:var(--violet)"></span>Yüklü Sözleşme</div><div class="v tnum">@s.DocumentCount</div></div>
+    </div>
+
+    <div class="stats">
+        <div class="stat"><div class="k"><span class="dot" style="background:var(--accent)"></span>Araç Sayısı</div><div class="v tnum">@s.VehicleCount</div></div>
+        <div class="stat"><div class="k"><span class="dot" style="background:var(--amber)"></span>Araç Doluluk</div><div class="v tnum">%@Doluluk</div></div>
+        <div class="stat"><div class="k"><span class="dot" style="background:var(--good)"></span>Boş Koltuk</div><div class="v tnum">@(s.TotalCapacity - s.AssignedCount)</div></div>
+        <div class="stat"><div class="k"><span class="dot" style="background:var(--violet)"></span>Veli Hesabı</div><div class="v tnum">@s.ParentAccountCount</div></div>
+    </div>
+
+    <div class="tcard">
+        <h3>Servis Tipi Dağılımı</h3>
+        <div style="margin-top:12px; display:flex; flex-direction:column; gap:10px;">
+            @Bar("Gidiş-Dönüş", s.FullService, "var(--accent)")
+            @Bar("Sabah", s.Morning, "var(--amber)")
+            @Bar("Akşam", s.Evening, "var(--violet)")
+        </div>
+    </div>
+
+    <div class="tcard">
+        <h3>Mahalle Dağılımı</h3>
+        @if (s.ByArea.Count == 0)
+        {
+            <div style="color:var(--ink-3); font-size:13px; margin-top:8px;">Veri yok.</div>
+        }
+        else
+        {
+            <div style="margin-top:6px">
+                @foreach (var a in s.ByArea)
+                {
+                    <div class="stud-row">
+                        <span>📍 @a.Area</span>
+                        <span class="g">@a.Count öğrenci</span>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private StatsDto? s;
+    private string? hata;
+
+    private int Doluluk => s is { TotalCapacity: > 0 } ? (int)Math.Round(s.AssignedCount * 100.0 / s.TotalCapacity) : 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { s = await Api.GetStatsAsync(); }
+        catch (Exception ex) { hata = "Özet yüklenemedi: " + ex.Message; }
+    }
+
+    private RenderFragment Bar(string label, int value, string color) => builder =>
+    {
+        var total = s is null ? 0 : Math.Max(1, s.FullService + s.Morning + s.Evening);
+        var pct = (int)Math.Round(value * 100.0 / total);
+        builder.AddMarkupContent(0,
+            $@"<div style='display:flex; align-items:center; gap:10px;'>
+                 <div style='width:110px; font-size:13px; color:var(--ink-2)'>{label}</div>
+                 <div style='flex:1; height:12px; border-radius:999px; background:var(--surface-2); border:1px solid var(--line); overflow:hidden;'>
+                   <div style='height:100%; width:{pct}%; background:{color};'></div>
+                 </div>
+                 <div style='width:34px; text-align:right; font-weight:700;' class='tnum'>{value}</div>
+               </div>");
+    };
+}

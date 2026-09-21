@@ -1,0 +1,311 @@
+@page "/portalim"
+@attribute [Authorize]
+@using OkyanusServis.Web.Models
+@using OkyanusServis.Web.Services
+@inject ApiClient Api
+@inject IJSRuntime JS
+@inject AuthState Auth
+@inject AppConfig Cfg
+@implements IAsyncDisposable
+
+<PageTitle>Portalım</PageTitle>
+
+<div class="page-head">
+    <h2>Servisim</h2>
+    <p>Çocuğunuzun servis bilgileri ve imzalı sözleşmeniz.</p>
+</div>
+
+<div class="tcard">
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <div style="font-size:22px">🔔</div>
+        <div style="flex:1; min-width:180px">
+            <h3 style="margin:0">Servis Bildirimleri</h3>
+            <div style="font-size:13px; color:var(--ink-3)">Servis eve yaklaşınca telefonunuza bildirim gelsin.</div>
+        </div>
+        <button class="tbtn" @onclick="BildirimAc">Bildirimleri Aç</button>
+        <button class="mini-btn" @onclick="BildirimTest">Deneme gönder</button>
+    </div>
+    @if (bildirimMsj is not null)
+    {
+        <div style="margin-top:10px; font-size:13px; font-weight:600; color:@(bildirimOk ? "var(--good)" : "var(--bad)")">@bildirimMsj</div>
+    }
+    <div style="margin-top:8px; font-size:12px; color:var(--ink-3)">
+        📱 İpucu: Telefonda kapalıyken de bildirim almak için tarayıcı menüsünden
+        <b>"Ana ekrana ekle"</b> deyip uygulamayı bir kez ekleyin.
+    </div>
+</div>
+
+<div class="tcard">
+    <h3>Bildirimlerim</h3>
+    @if (bildirimler.Count == 0)
+    {
+        <div style="color:var(--ink-3); font-size:13px; margin-top:8px;">Henüz bildirim yok.</div>
+    }
+    else
+    {
+        <div style="margin-top:10px; display:flex; flex-direction:column; gap:8px;">
+            @foreach (var b in bildirimler)
+            {
+                <div class="stud-row" style="align-items:flex-start; @(b.IsRead ? "" : "background:var(--accent-soft);")">
+                    <span style="font-size:18px; margin-right:8px;">@(b.Icon ?? "🔔")</span>
+                    <div style="flex:1">
+                        <div style="font-weight:650; font-size:13px;">@b.Title</div>
+                        <div style="font-size:13px; color:var(--ink-2);">@b.Message</div>
+                        <div style="font-size:11px; color:var(--ink-3); margin-top:2px;">@b.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<div class="tcard">
+    <h3>🚌 Servis Konumu (Canlı)</h3>
+    @if (tracking is null)
+    {
+        <div style="color:var(--ink-3); font-size:13px; margin-top:8px;">Yükleniyor…</div>
+    }
+    else if (tracking.Active)
+    {
+        <p class="csub">Sefer: <b>@tracking.Leg</b> · konum yaklaşık 20 saniyede bir güncellenir.</p>
+        <div id="liveMap" style="height:320px; border-radius:12px; overflow:hidden; margin-top:8px;"></div>
+    }
+    else
+    {
+        <div style="display:flex; align-items:center; gap:8px; color:var(--ink-3); font-size:13px; margin-top:8px;">
+            <span style="font-size:18px">🕒</span> <span>@tracking.Reason</span>
+        </div>
+    }
+</div>
+
+@if (hata is not null)
+{
+    <div class="tcard" style="color:var(--bad)">@hata</div>
+}
+else if (kayitlar is null)
+{
+    <p style="color:var(--ink-3)"><em>Yükleniyor…</em></p>
+}
+else if (kayitlar.Count == 0)
+{
+    <div class="tcard">Size tanımlı bir kayıt bulunamadı. Lütfen servis firmanızla iletişime geçin.</div>
+}
+else
+{
+    @foreach (var k in kayitlar)
+    {
+        <div class="tcard">
+            <div class="veh-head">
+                <div class="avatar">@Initials(k.StudentName)</div>
+                <div style="flex:1">
+                    <h3 style="margin:0">@k.StudentName</h3>
+                    <div style="font-size:12px; color:var(--ink-3)">@k.Grade · @k.School</div>
+                </div>
+            </div>
+
+            <div class="detail-grid" style="padding-top:14px">
+                <div class="field"><div class="lab">Servis Tipi</div><div class="val">@k.ServiceType</div></div>
+                <div class="field"><div class="lab">Araç</div><div class="val">@(k.VehiclePlate ?? "Henüz atanmadı")</div></div>
+                <div class="field"><div class="lab">Veli</div><div class="val">@k.ParentName</div></div>
+                <div class="field"><div class="lab">Mahalle</div><div class="val">@k.Area</div></div>
+                <div class="field"><div class="lab">Durum</div><div class="val">@k.PaymentStatus</div></div>
+                <div class="field"><div class="lab">Ödenen</div><div class="val">@(k.PaidAmount.HasValue ? k.PaidAmount.Value.ToString("N0") + " ₺" : "—")</div></div>
+                <div class="field"><div class="lab">Ödeme Yöntemi</div><div class="val">@OdemeYontemi(k)</div></div>
+            </div>
+
+            <div style="font-weight:650; font-size:14px; margin:16px 0 6px;">Sözleşmem / Belgelerim</div>
+            @if (!belgeler.TryGetValue(k.Id, out var liste) || liste.Count == 0)
+            {
+                <div style="color:var(--ink-3); font-size:13px;">Henüz belge yüklenmemiş.</div>
+            }
+            else
+            {
+                @foreach (var b in liste)
+                {
+                    <div class="stud-row">
+                        <span>📄 @b.FileName</span>
+                        <div style="margin-left:auto; display:flex; align-items:center; gap:10px;">
+                            <span style="font-size:12px; color:var(--ink-3)">@b.UploadedAt.ToLocalTime().ToString("dd.MM.yyyy")</span>
+                            <button class="mini-btn" @onclick="() => Goruntule(b)">Görüntüle</button>
+                            <button class="mini-btn" @onclick="() => Indir(b)">İndir</button>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    }
+
+    <div class="tcard">
+        <h3>Duyurular</h3>
+        @if (duyurular.Count == 0)
+        {
+            <div style="color:var(--ink-3); font-size:13px; margin-top:8px;">Henüz duyuru yok.</div>
+        }
+        else
+        {
+            <div style="margin-top:10px">
+                @foreach (var d in duyurular)
+                {
+                    <div class="ann-item">
+                        <div class="at">@d.Text</div>
+                        <div class="am">@d.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<RegistrationDto>? kayitlar;
+    private readonly Dictionary<int, List<DocumentDto>> belgeler = new();
+    private List<AnnouncementDto> duyurular = new();
+    private List<NotificationDto> bildirimler = new();
+    private string? hata;
+
+    // Canlı takip
+    private TrackingDto? tracking;
+    private bool liveMapInited;
+    private bool needsBusUpdate;
+    private CancellationTokenSource? pollCts;
+
+    private string ApiBase => Cfg.ApiBaseUrl;
+    private string? bildirimMsj;
+    private bool bildirimOk;
+
+    private async Task BildirimAc()
+    {
+        bildirimMsj = "İzin isteniyor…"; bildirimOk = false;
+        try
+        {
+            var res = await JS.InvokeAsync<PushResult>("okPush.enable", ApiBase, Auth.Token);
+            bildirimOk = res.Ok; bildirimMsj = res.Message;
+        }
+        catch (Exception ex) { bildirimOk = false; bildirimMsj = "Hata: " + ex.Message; }
+    }
+
+    private async Task BildirimTest()
+    {
+        try
+        {
+            var res = await JS.InvokeAsync<PushResult>("okPush.test", ApiBase, Auth.Token);
+            bildirimOk = res.Ok; bildirimMsj = res.Message;
+        }
+        catch (Exception ex) { bildirimOk = false; bildirimMsj = "Hata: " + ex.Message; }
+    }
+
+    private class PushResult
+    {
+        public bool Ok { get; set; }
+        public string Message { get; set; } = "";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            kayitlar = await Api.GetMineAsync();
+            foreach (var k in kayitlar)
+                belgeler[k.Id] = await Api.GetDocumentsAsync(k.Id);
+            duyurular = await Api.GetAnnouncementsAsync();
+            bildirimler = await Api.GetMyNotificationsAsync();
+            // Görüntülendi → okundu işaretle (sonraki girişte rozet düşmesin)
+            if (bildirimler.Any(b => !b.IsRead))
+                await Api.MarkMyNotificationsReadAsync();
+            await RefreshTracking();
+        }
+        catch (Exception ex) { hata = "Yüklenemedi: " + ex.Message; }
+    }
+
+    private async Task RefreshTracking()
+    {
+        try { tracking = await Api.GetTrackingAsync(); needsBusUpdate = true; }
+        catch { /* takip alınamazsa sessiz geç */ }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            _ = PollLoop();  // arka planda periyodik yenileme başlat
+
+        // Harita yaşam döngüsü
+        if (tracking?.Active == true)
+        {
+            if (!liveMapInited)
+            {
+                await JS.InvokeVoidAsync("okMap.initLive", "liveMap", tracking.HomeLat, tracking.HomeLng);
+                liveMapInited = true;
+                await JS.InvokeVoidAsync("okMap.updateBuses", "liveMap", tracking.Buses);
+                needsBusUpdate = false;
+            }
+            else if (needsBusUpdate)
+            {
+                await JS.InvokeVoidAsync("okMap.updateBuses", "liveMap", tracking.Buses);
+                needsBusUpdate = false;
+            }
+        }
+        else if (liveMapInited)
+        {
+            await JS.InvokeVoidAsync("okMap.dispose", "liveMap");
+            liveMapInited = false;
+        }
+    }
+
+    private async Task PollLoop()
+    {
+        pollCts = new CancellationTokenSource();
+        var token = pollCts.Token;
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                await Task.Delay(20000, token);
+                await RefreshTracking();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        pollCts?.Cancel();
+        try { if (liveMapInited) await JS.InvokeVoidAsync("okMap.dispose", "liveMap"); }
+        catch { }
+    }
+
+    private async Task Indir(DocumentDto b)
+    {
+        var bytes = await Api.DownloadDocumentAsync(b.Id);
+        await JS.InvokeVoidAsync("okFiles.download", b.FileName, Convert.ToBase64String(bytes), b.ContentType);
+    }
+
+    private async Task Goruntule(DocumentDto b)
+    {
+        var bytes = await Api.DownloadDocumentAsync(b.Id);
+        await JS.InvokeVoidAsync("okFiles.open", Convert.ToBase64String(bytes), b.ContentType);
+    }
+
+    private static string Initials(string name)
+    {
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return string.Concat(parts.Take(2).Select(p => char.ToUpper(p[0])));
+    }
+
+    private static string OdemeYontemi(RegistrationDto k)
+    {
+        var parts = new List<string>();
+        if (k.DownPayment is > 0)
+        {
+            var m = string.IsNullOrEmpty(k.DownPaymentMethod) ? "" : $" ({k.DownPaymentMethod})";
+            parts.Add($"Peşin {k.DownPayment:N0}₺{m}");
+        }
+        if (k.InstallmentAmount is > 0)
+        {
+            var t = k.Installments.HasValue ? $" ({k.Installments} taksit)" : "";
+            parts.Add($"Taksit {k.InstallmentAmount:N0}₺{t}");
+        }
+        if (parts.Count > 0) return string.Join(" + ", parts);
+        return string.IsNullOrEmpty(k.PaymentMethod) ? "—" : k.PaymentMethod;   // eski kayıtlar
+    }
+}
